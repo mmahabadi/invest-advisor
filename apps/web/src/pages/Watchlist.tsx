@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, RefreshCw, Eye, TrendingUp, AlertCircle } from 'lucide-react';
-import { Card, CardContent, CardHeader } from '../components/ui/Card';
+import { Plus, Trash2, RefreshCw, Eye, AlertCircle } from 'lucide-react';
+import { Card, CardContent } from '../components/ui/Card';
 import { Badge, RecommendationBadge, ConfidenceBadge } from '../components/ui/Badge';
 import { PriceChange, formatCurrency } from '../components/ui/PriceChange';
 import { watchlistApi } from '../services/api';
@@ -12,7 +12,7 @@ export default function WatchlistPage() {
   const [filter, setFilter] = useState<string>('');
   const queryClient = useQueryClient();
   
-  const { data, isLoading, refetch } = useQuery<{ items: WatchlistItem[] }>({
+  const { data, isLoading } = useQuery<{ items: WatchlistItem[] }>({
     queryKey: ['watchlist', filter],
     queryFn: () => watchlistApi.getWatchlist('confidence', 'desc', filter || undefined),
   });

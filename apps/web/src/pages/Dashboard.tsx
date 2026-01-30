@@ -7,7 +7,6 @@ import {
   Bell,
   ArrowUpRight,
   ArrowDownRight,
-  Activity,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
@@ -60,8 +59,8 @@ export default function Dashboard() {
           title="Total Profit/Loss"
           value={formatCurrency(summary?.profitLoss || 0)}
           change={summary?.profitLossPct || 0}
-          icon={summary?.profitLoss >= 0 ? TrendingUp : TrendingDown}
-          iconColor={summary?.profitLoss >= 0 ? 'bg-success-500' : 'bg-danger-500'}
+          icon={(summary?.profitLoss ?? 0) >= 0 ? TrendingUp : TrendingDown}
+          iconColor={(summary?.profitLoss ?? 0) >= 0 ? 'bg-success-500' : 'bg-danger-500'}
         />
         <SummaryCard
           title="Watchlist Items"

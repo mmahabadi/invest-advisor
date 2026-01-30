@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Bell, BellOff, CheckCircle, Clock } from 'lucide-react';
-import { Card, CardContent, CardHeader } from '../components/ui/Card';
+import { Card, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { formatCurrency } from '../components/ui/PriceChange';
 import { alertsApi } from '../services/api';
@@ -13,12 +13,12 @@ export default function AlertsPage() {
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
   const queryClient = useQueryClient();
   
-  const { data: alertsData, isLoading: alertsLoading } = useQuery<{ alerts: Alert[] }>({
+  const { data: alertsData } = useQuery<{ alerts: Alert[] }>({
     queryKey: ['alerts', 'active'],
     queryFn: () => alertsApi.getAlerts('active'),
   });
   
-  const { data: historyData, isLoading: historyLoading } = useQuery<{ history: AlertHistory[]; total: number }>({
+  const { data: historyData } = useQuery<{ history: AlertHistory[]; total: number }>({
     queryKey: ['alertHistory'],
     queryFn: () => alertsApi.getHistory(50),
   });

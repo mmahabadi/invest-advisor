@@ -6,6 +6,8 @@ import { settingsApi } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import type { Settings } from '../types';
 
+type NotificationSettings = Settings['notifications'];
+
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { user, logout } = useAuthStore();
@@ -15,10 +17,20 @@ export default function SettingsPage() {
     queryFn: () => settingsApi.getSettings(),
   });
   
-  const [formData, setFormData] = useState<Partial<Settings>>({});
+  const [currency, setCurrency] = useState<string | undefined>();
+  const [timezone, setTimezone] = useState<string | undefined>();
+  const [theme, setTheme] = useState<string | undefined>();
+  const [notifications, setNotifications] = useState<Partial<NotificationSettings>>({});
   
   const updateMutation = useMutation({
-    mutationFn: (data: Partial<Settings>) => settingsApi.updateSettings(data),
+    mutationFn: () => {
+      const data: Record<string, unknown> = {};
+      if (currency !== undefined) data.currency = currency;
+      if (timezone !== undefined) data.timezone = timezone;
+      if (theme !== undefined) data.theme = theme;
+      if (Object.keys(notifications).length > 0) data.notifications = notifications;
+      return settingsApi.updateSettings(data as Parameters<typeof settingsApi.updateSettings>[0]);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
     },
@@ -39,11 +51,14 @@ export default function SettingsPage() {
     );
   }
 
-  const currentSettings = { ...settings, ...formData };
+  const currentCurrency = currency ?? settings?.currency ?? 'USD';
+  const currentTimezone = timezone ?? settings?.timezone ?? 'UTC';
+  const currentTheme = theme ?? settings?.theme ?? 'dark';
+  const currentNotifications = { ...settings?.notifications, ...notifications };
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    updateMutation.mutate(formData);
+    updateMutation.mutate();
   };
 
   return (
@@ -100,8 +115,8 @@ export default function SettingsPage() {
                 <label className="label">Currency</label>
                 <select
                   className="input"
-                  value={currentSettings.currency || 'USD'}
-                  onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                  value={currentCurrency}
+                  onChange={(e) => setCurrency(e.target.value)}
                 >
                   <option value="USD">USD - US Dollar</option>
                   <option value="EUR">EUR - Euro</option>
@@ -115,8 +130,8 @@ export default function SettingsPage() {
                 <label className="label">Timezone</label>
                 <select
                   className="input"
-                  value={currentSettings.timezone || 'UTC'}
-                  onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
+                  value={currentTimezone}
+                  onChange={(e) => setTimezone(e.target.value)}
                 >
                   <option value="UTC">UTC</option>
                   <option value="America/New_York">Eastern Time (ET)</option>
@@ -134,8 +149,8 @@ export default function SettingsPage() {
               <label className="label">Theme</label>
               <select
                 className="input"
-                value={currentSettings.theme || 'dark'}
-                onChange={(e) => setFormData({ ...formData, theme: e.target.value })}
+                value={currentTheme}
+                onChange={(e) => setTheme(e.target.value)}
               >
                 <option value="dark">Dark</option>
                 <option value="light">Light</option>
@@ -158,14 +173,8 @@ export default function SettingsPage() {
               <label className="flex items-center gap-3">
                 <input
                   type="checkbox"
-                  checked={currentSettings.notifications?.email ?? true}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    notifications: {
-                      ...formData.notifications,
-                      email: e.target.checked,
-                    },
-                  })}
+                  checked={currentNotifications.email ?? true}
+                  onChange={(e) => setNotifications({ ...notifications, email: e.target.checked })}
                   className="w-4 h-4 rounded border-surface-600 bg-surface-800 text-primary-500 focus:ring-primary-500"
                 />
                 <span className="text-surface-200">Email notifications</span>
@@ -174,14 +183,8 @@ export default function SettingsPage() {
               <label className="flex items-center gap-3">
                 <input
                   type="checkbox"
-                  checked={currentSettings.notifications?.dailySummary ?? true}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    notifications: {
-                      ...formData.notifications,
-                      dailySummary: e.target.checked,
-                    },
-                  })}
+                  checked={currentNotifications.dailySummary ?? true}
+                  onChange={(e) => setNotifications({ ...notifications, dailySummary: e.target.checked })}
                   className="w-4 h-4 rounded border-surface-600 bg-surface-800 text-primary-500 focus:ring-primary-500"
                 />
                 <span className="text-surface-200">Daily summary email</span>
@@ -190,14 +193,8 @@ export default function SettingsPage() {
               <label className="flex items-center gap-3">
                 <input
                   type="checkbox"
-                  checked={currentSettings.notifications?.weeklyReport ?? true}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    notifications: {
-                      ...formData.notifications,
-                      weeklyReport: e.target.checked,
-                    },
-                  })}
+                  checked={currentNotifications.weeklyReport ?? true}
+                  onChange={(e) => setNotifications({ ...notifications, weeklyReport: e.target.checked })}
                   className="w-4 h-4 rounded border-surface-600 bg-surface-800 text-primary-500 focus:ring-primary-500"
                 />
                 <span className="text-surface-200">Weekly performance report</span>
@@ -210,14 +207,8 @@ export default function SettingsPage() {
                 <input
                   type="time"
                   className="input"
-                  value={currentSettings.notifications?.quietHoursStart || '22:00'}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    notifications: {
-                      ...formData.notifications,
-                      quietHoursStart: e.target.value,
-                    },
-                  })}
+                  value={currentNotifications.quietHoursStart || '22:00'}
+                  onChange={(e) => setNotifications({ ...notifications, quietHoursStart: e.target.value })}
                 />
               </div>
               <div>
@@ -225,14 +216,8 @@ export default function SettingsPage() {
                 <input
                   type="time"
                   className="input"
-                  value={currentSettings.notifications?.quietHoursEnd || '08:00'}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    notifications: {
-                      ...formData.notifications,
-                      quietHoursEnd: e.target.value,
-                    },
-                  })}
+                  value={currentNotifications.quietHoursEnd || '08:00'}
+                  onChange={(e) => setNotifications({ ...notifications, quietHoursEnd: e.target.value })}
                 />
               </div>
             </div>
@@ -244,18 +229,12 @@ export default function SettingsPage() {
                   type="range"
                   min="0"
                   max="100"
-                  value={currentSettings.notifications?.minConfidenceAlert ?? 70}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    notifications: {
-                      ...formData.notifications,
-                      minConfidenceAlert: parseInt(e.target.value),
-                    },
-                  })}
+                  value={currentNotifications.minConfidenceAlert ?? 70}
+                  onChange={(e) => setNotifications({ ...notifications, minConfidenceAlert: parseInt(e.target.value) })}
                   className="flex-1"
                 />
                 <span className="text-surface-200 font-mono w-12 text-right">
-                  {currentSettings.notifications?.minConfidenceAlert ?? 70}%
+                  {currentNotifications.minConfidenceAlert ?? 70}%
                 </span>
               </div>
               <p className="text-xs text-surface-500 mt-1">
