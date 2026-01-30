@@ -11,7 +11,17 @@ export class HealthController {
   ) {}
 
   @Get()
-  async check() {
+  check() {
+    // Simple health check for Railway - just return OK
+    // Use /health/full for detailed service checks
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Get('full')
+  async checkFull() {
     const services = {
       database: 'unknown',
       mlEngine: 'unknown',
@@ -36,7 +46,6 @@ export class HealthController {
     }
 
     // Check Redis (basic check via database pool if redis is available)
-    // For now, mark as ok if database is ok since we're using postgres
     services.redis = services.database === 'ok' ? 'ok' : 'error';
 
     const allOk = Object.values(services).every((s) => s === 'ok');
