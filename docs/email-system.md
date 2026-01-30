@@ -12,7 +12,7 @@ The email system handles all user notifications including:
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Scheduler     │────►│   Email Queue   │────►│   SendGrid     │
+│   Scheduler     │────►│   Email Queue   │────►│     Resend      │
 │   (Cron Jobs)   │     │   (PostgreSQL)  │     │   (Delivery)    │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
         │                       │
@@ -243,18 +243,23 @@ InvestAdvisor
 
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as sgMail from '@sendgrid/mail';
+import { Resend } from 'resend';
 import { DatabaseService } from '../database/database.service';
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
+  private readonly resend: Resend;
+  private readonly fromEmail: string;
+  private readonly fromName: string;
 
   constructor(
     private config: ConfigService,
     private db: DatabaseService,
   ) {
-    sgMail.setApiKey(this.config.get('SENDGRID_API_KEY'));
+    this.resend = new Resend(this.config.get('RESEND_API_KEY'));
+    this.fromEmail = this.config.get('EMAIL_FROM', 'alerts@invest-advisor.com');
+    this.fromName = this.config.get('EMAIL_FROM_NAME', 'InvestAdvisor');
   }
 
   async queueEmail(params: QueueEmailParams): Promise<void> {
@@ -284,15 +289,12 @@ export class EmailService {
 
   private async sendEmail(email: EmailQueueItem): Promise<void> {
     try {
-      await sgMail.send({
+      await this.resend.emails.send({
+        from: `${this.fromName} <${this.fromEmail}>`,
         to: email.recipient_email,
-        from: {
-          email: 'alerts@invest-advisor.com',
-          name: 'InvestAdvisor',
-        },
         subject: email.subject,
         html: email.body_html,
-        text: email.body_text,
+        text: email.body_text || undefined,
       });
 
       await this.db.query(`
@@ -652,7 +654,7 @@ templates/
 
 EMAIL_FROM=alerts@invest-advisor.com
 EMAIL_FROM_NAME=InvestAdvisor
-SENDGRID_API_KEY=SG.xxxxx
+RESEND_API_KEY=re_xxxxx  // Get from https://resend.com
 
 // Scheduling
 DAILY_SUMMARY_HOUR=8  // 8 AM UTC

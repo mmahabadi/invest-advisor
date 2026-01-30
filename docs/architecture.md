@@ -26,7 +26,7 @@ InvestAdvisor follows a microservices architecture with three main services comm
 │   Database       │  │  (FastAPI)    │  │                            │
 │                  │  │               │  │  • Yahoo Finance API       │
 │  • Users         │  │  • Predictions│  │  • News APIs               │
-│  • Portfolio     │  │  • Analysis   │  │  • Email Service (SendGrid)│
+│  • Portfolio     │  │  • Analysis   │  │  • Email Service (Resend)  │
 │  • Watchlist     │  │  • Signals    │  │  • Redis (Caching)         │
 │  • Transactions  │  │               │  │                            │
 │  • Alerts        │  │               │  │                            │
@@ -229,7 +229,7 @@ See [data-model.md](./data-model.md) for detailed schema.
 ### Backend ↔ External APIs
 - Yahoo Finance: Market data
 - NewsAPI: News articles
-- SendGrid: Email delivery
+- Resend: Email delivery
 
 ## 📈 Scalability Considerations
 

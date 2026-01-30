@@ -23,8 +23,10 @@ JWT_REFRESH_EXPIRES_IN=7d
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 
-# SendGrid Email
-SENDGRID_API_KEY=
+# Resend Email (https://resend.com)
+RESEND_API_KEY=
+EMAIL_FROM=alerts@invest-advisor.com
+EMAIL_FROM_NAME=InvestAdvisor
 
 # ML Engine
 ML_ENGINE_URL=http://localhost:8000
@@ -57,7 +59,8 @@ Set these in your deployment platform:
 DATABASE_URL=postgresql://...
 REDIS_URL=redis://...
 JWT_SECRET=production-secret
-SENDGRID_API_KEY=SG.xxx
+RESEND_API_KEY=re_xxx
+EMAIL_FROM=alerts@invest-advisor.com
 ML_ENGINE_URL=https://ml.invest-advisor.com
 FRONTEND_URL=https://invest-advisor.com
 ```

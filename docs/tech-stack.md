@@ -109,7 +109,7 @@ apps/web/
     "bcrypt": "^5.1.1",
     "class-validator": "^0.14.1",
     "class-transformer": "^0.5.1",
-    "@sendgrid/mail": "^8.1.0",
+    "resend": "^3.2.0",
     "axios": "^1.6.5",
     "handlebars": "^4.7.8"
   },
@@ -324,12 +324,12 @@ async function getNews(symbol: string) {
 }
 ```
 
-### SendGrid (Email)
+### Resend (Email)
 
 ```typescript
-import * as sgMail from '@sendgrid/mail';
+import { Resend } from 'resend';
 
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 await sgMail.send({
   to: 'user@example.com',
@@ -410,7 +410,7 @@ PORT=3000
 DATABASE_URL=postgresql://...
 REDIS_URL=redis://...
 JWT_SECRET=xxx
-SENDGRID_API_KEY=xxx
+RESEND_API_KEY=re_xxx
 ML_ENGINE_URL=https://ml.invest-advisor.com
 FRONTEND_URL=https://invest-advisor.com
 

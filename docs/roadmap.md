@@ -174,7 +174,7 @@ Total Estimated Time:     ~10 weeks
 - [ ] Sentiment endpoint
 
 #### 3.5 Email System
-- [ ] SendGrid integration
+- [ ] Resend integration
 - [ ] Email queue table
 - [ ] Email templates (buy alert, sell alert)
 - [ ] Daily summary template

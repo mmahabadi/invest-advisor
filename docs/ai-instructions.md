@@ -561,7 +561,7 @@ If you encounter issues:
 - `DATABASE_URL` - PostgreSQL connection
 - `REDIS_URL` - Redis connection
 - `JWT_SECRET` - Auth secret
-- `SENDGRID_API_KEY` - Email service
+- `RESEND_API_KEY` - Email service (Resend)
 - `VITE_API_URL` - Frontend API URL
 
 ---

@@ -1,0 +1,14 @@
+{
+  "name": "@invest-advisor/utils",
+  "version": "0.1.0",
+  "description": "Shared utilities for InvestAdvisor",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}

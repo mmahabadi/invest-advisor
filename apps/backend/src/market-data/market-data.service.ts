@@ -1,0 +1,323 @@
+import { Injectable, Inject, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
+import { DatabaseService } from '../database/database.module';
+
+interface QuoteData {
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  changePct: number;
+  open: number;
+  high: number;
+  low: number;
+  volume: number;
+  marketCap?: number;
+  pe?: number;
+}
+
+interface HistoricalData {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+@Injectable()
+export class MarketDataService {
+  private readonly logger = new Logger(MarketDataService.name);
+  private readonly cache = new Map<string, { data: any; expiry: number }>();
+
+  constructor(
+    private configService: ConfigService,
+    @Inject('DatabaseService') private db: DatabaseService,
+  ) {}
+
+  async getQuote(symbol: string): Promise<QuoteData> {
+    const cacheKey = `quote:${symbol}`;
+    const cached = this.getFromCache(cacheKey);
+    if (cached) return cached;
+
+    try {
+      // Try to fetch from Yahoo Finance (via yfinance proxy or API)
+      const data = await this.fetchYahooQuote(symbol);
+      this.setCache(cacheKey, data, 60 * 1000); // Cache for 1 minute
+      
+      // Update database cache
+      await this.updateMarketDataCache(data);
+      
+      return data;
+    } catch (error) {
+      // Fallback to database cache
+      const dbCache = await this.db.query(
+        `SELECT * FROM market_data_cache WHERE symbol = $1`,
+        [symbol.toUpperCase()],
+      );
+
+      if (dbCache.rows.length > 0) {
+        const row = dbCache.rows[0];
+        return {
+          symbol: row.symbol,
+          name: row.asset_name || row.symbol,
+          price: Number(row.current_price),
+          change: Number(row.price_change) || 0,
+          changePct: Number(row.price_change_pct) || 0,
+          open: Number(row.open_price) || 0,
+          high: Number(row.high_24h) || 0,
+          low: Number(row.low_24h) || 0,
+          volume: Number(row.volume) || 0,
+          marketCap: row.market_cap ? Number(row.market_cap) : undefined,
+          pe: row.pe_ratio ? Number(row.pe_ratio) : undefined,
+        };
+      }
+
+      throw error;
+    }
+  }
+
+  async getPriceHistory(
+    symbol: string,
+    range: string = '1m',
+  ): Promise<HistoricalData[]> {
+    const cacheKey = `history:${symbol}:${range}`;
+    const cached = this.getFromCache(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const data = await this.fetchYahooHistory(symbol, range);
+      this.setCache(cacheKey, data, 5 * 60 * 1000); // Cache for 5 minutes
+      return data;
+    } catch (error) {
+      this.logger.error(`Failed to fetch history for ${symbol}`, error);
+      return [];
+    }
+  }
+
+  async searchSymbol(query: string) {
+    try {
+      // Use Yahoo Finance search or fallback to common symbols
+      const response = await axios.get(
+        `https://query1.finance.yahoo.com/v1/finance/search`,
+        {
+          params: {
+            q: query,
+            quotesCount: 10,
+            newsCount: 0,
+          },
+          headers: {
+            'User-Agent': 'Mozilla/5.0',
+          },
+        },
+      );
+
+      return response.data.quotes.map((q: any) => ({
+        symbol: q.symbol,
+        name: q.shortname || q.longname,
+        type: this.mapExchangeToType(q.exchange),
+        exchange: q.exchange,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  async getMarketOverview() {
+    const indices = ['%5EGSPC', '%5EIXIC', '%5EDJI']; // S&P 500, NASDAQ, DOW
+    const crypto = ['BTC-USD', 'ETH-USD'];
+    const commodities = ['GC=F', 'SI=F']; // Gold, Silver
+
+    const fetchQuotes = async (symbols: string[]) => {
+      return Promise.all(
+        symbols.map(async (s) => {
+          try {
+            return await this.getQuote(s);
+          } catch {
+            return null;
+          }
+        }),
+      );
+    };
+
+    const [indexQuotes, cryptoQuotes, commodityQuotes] = await Promise.all([
+      fetchQuotes(indices),
+      fetchQuotes(crypto),
+      fetchQuotes(commodities),
+    ]);
+
+    return {
+      indices: {
+        sp500: indexQuotes[0]
+          ? { value: indexQuotes[0].price, change: indexQuotes[0].change, changePct: indexQuotes[0].changePct }
+          : null,
+        nasdaq: indexQuotes[1]
+          ? { value: indexQuotes[1].price, change: indexQuotes[1].change, changePct: indexQuotes[1].changePct }
+          : null,
+        dow: indexQuotes[2]
+          ? { value: indexQuotes[2].price, change: indexQuotes[2].change, changePct: indexQuotes[2].changePct }
+          : null,
+      },
+      crypto: {
+        btc: cryptoQuotes[0]
+          ? { price: cryptoQuotes[0].price, change24h: cryptoQuotes[0].changePct }
+          : null,
+        eth: cryptoQuotes[1]
+          ? { price: cryptoQuotes[1].price, change24h: cryptoQuotes[1].changePct }
+          : null,
+      },
+      commodities: {
+        gold: commodityQuotes[0]
+          ? { price: commodityQuotes[0].price, change: commodityQuotes[0].changePct }
+          : null,
+        silver: commodityQuotes[1]
+          ? { price: commodityQuotes[1].price, change: commodityQuotes[1].changePct }
+          : null,
+      },
+      marketStatus: this.getMarketStatus(),
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+
+  private async fetchYahooQuote(symbol: string): Promise<QuoteData> {
+    const response = await axios.get(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`,
+      {
+        params: {
+          interval: '1d',
+          range: '1d',
+        },
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+        },
+        timeout: 10000,
+      },
+    );
+
+    const result = response.data.chart.result[0];
+    const meta = result.meta;
+    const quote = result.indicators.quote[0];
+
+    return {
+      symbol: meta.symbol,
+      name: meta.shortName || meta.symbol,
+      price: meta.regularMarketPrice,
+      change: meta.regularMarketPrice - meta.previousClose,
+      changePct: ((meta.regularMarketPrice - meta.previousClose) / meta.previousClose) * 100,
+      open: quote.open?.[quote.open.length - 1] || meta.regularMarketPrice,
+      high: quote.high?.[quote.high.length - 1] || meta.regularMarketPrice,
+      low: quote.low?.[quote.low.length - 1] || meta.regularMarketPrice,
+      volume: quote.volume?.[quote.volume.length - 1] || 0,
+      marketCap: meta.marketCap,
+    };
+  }
+
+  private async fetchYahooHistory(symbol: string, range: string): Promise<HistoricalData[]> {
+    const rangeMap: Record<string, { range: string; interval: string }> = {
+      '1d': { range: '1d', interval: '5m' },
+      '1w': { range: '5d', interval: '15m' },
+      '1m': { range: '1mo', interval: '1d' },
+      '3m': { range: '3mo', interval: '1d' },
+      '1y': { range: '1y', interval: '1d' },
+      '5y': { range: '5y', interval: '1wk' },
+    };
+
+    const config = rangeMap[range] || rangeMap['1m'];
+
+    const response = await axios.get(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`,
+      {
+        params: config,
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+        },
+        timeout: 10000,
+      },
+    );
+
+    const result = response.data.chart.result[0];
+    const timestamps = result.timestamp || [];
+    const quote = result.indicators.quote[0];
+
+    return timestamps.map((ts: number, i: number) => ({
+      timestamp: new Date(ts * 1000).toISOString(),
+      open: quote.open?.[i] || 0,
+      high: quote.high?.[i] || 0,
+      low: quote.low?.[i] || 0,
+      close: quote.close?.[i] || 0,
+      volume: quote.volume?.[i] || 0,
+    }));
+  }
+
+  private async updateMarketDataCache(data: QuoteData) {
+    await this.db.query(
+      `INSERT INTO market_data_cache 
+       (symbol, asset_type, asset_name, current_price, price_change, price_change_pct, 
+        open_price, high_24h, low_24h, volume, market_cap, last_updated)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+       ON CONFLICT (symbol) DO UPDATE SET
+         current_price = $4, price_change = $5, price_change_pct = $6,
+         open_price = $7, high_24h = $8, low_24h = $9, volume = $10,
+         market_cap = $11, last_updated = NOW()`,
+      [
+        data.symbol,
+        this.detectAssetType(data.symbol),
+        data.name,
+        data.price,
+        data.change,
+        data.changePct,
+        data.open,
+        data.high,
+        data.low,
+        data.volume,
+        data.marketCap || null,
+      ],
+    );
+  }
+
+  private getFromCache(key: string) {
+    const cached = this.cache.get(key);
+    if (cached && cached.expiry > Date.now()) {
+      return cached.data;
+    }
+    this.cache.delete(key);
+    return null;
+  }
+
+  private setCache(key: string, data: any, ttl: number) {
+    this.cache.set(key, { data, expiry: Date.now() + ttl });
+  }
+
+  private detectAssetType(symbol: string): string {
+    if (symbol.includes('-USD') || symbol.includes('BTC') || symbol.includes('ETH')) {
+      return 'crypto';
+    }
+    if (symbol.includes('=F')) {
+      return 'commodity';
+    }
+    if (symbol.startsWith('^') || symbol.startsWith('%5E')) {
+      return 'index';
+    }
+    return 'stock';
+  }
+
+  private mapExchangeToType(exchange: string): string {
+    if (exchange === 'CCC') return 'crypto';
+    if (exchange === 'CME' || exchange === 'NYM') return 'commodity';
+    return 'stock';
+  }
+
+  private getMarketStatus(): string {
+    const now = new Date();
+    const nyTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const hours = nyTime.getHours();
+    const day = nyTime.getDay();
+
+    if (day === 0 || day === 6) return 'closed';
+    if (hours >= 9.5 && hours < 16) return 'open';
+    if (hours >= 4 && hours < 9.5) return 'pre-market';
+    if (hours >= 16 && hours < 20) return 'after-hours';
+    return 'closed';
+  }
+}
