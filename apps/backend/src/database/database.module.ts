@@ -1,4 +1,4 @@
-import { Module, Global, OnModuleDestroy, Logger } from '@nestjs/common';
+import { Module, Global, OnModuleDestroy, Logger, Inject, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
 
@@ -10,7 +10,7 @@ const DATABASE_POOL = 'DATABASE_POOL';
     {
       provide: DATABASE_POOL,
       inject: [ConfigService],
-      useFactory: async (configService: ConfigService) => {
+      useFactory: async (configService: ConfigService): Promise<Pool | null> => {
         const databaseUrl = configService.get<string>('DATABASE_URL');
         const nodeEnv = configService.get<string>('NODE_ENV', 'development');
         
@@ -54,10 +54,17 @@ const DATABASE_POOL = 'DATABASE_POOL';
   exports: [DATABASE_POOL, 'DatabaseService'],
 })
 export class DatabaseModule implements OnModuleDestroy {
-  constructor(private readonly pool: Pool | null) {}
+  private readonly logger = new Logger(DatabaseModule.name);
+  
+  constructor(
+    @Optional() @Inject(DATABASE_POOL) private readonly pool: Pool | null,
+  ) {}
 
   async onModuleDestroy() {
-    await this.pool?.end();
+    if (this.pool) {
+      await this.pool.end();
+      this.logger.log('Database pool closed');
+    }
   }
 }
 

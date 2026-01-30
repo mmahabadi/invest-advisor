@@ -1,4 +1,4 @@
-import { Controller, Get, Inject } from '@nestjs/common';
+import { Controller, Get, Inject, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { DatabaseService } from '../database/database.module';
@@ -6,7 +6,7 @@ import { DatabaseService } from '../database/database.module';
 @Controller('health')
 export class HealthController {
   constructor(
-    @Inject('DatabaseService') private db: DatabaseService,
+    @Optional() @Inject('DatabaseService') private db: DatabaseService | null,
     private configService: ConfigService,
   ) {}
 
@@ -25,15 +25,18 @@ export class HealthController {
     const services = {
       database: 'unknown',
       mlEngine: 'unknown',
-      redis: 'unknown',
     };
 
     // Check database
-    try {
-      await this.db.query('SELECT 1');
-      services.database = 'ok';
-    } catch {
-      services.database = 'error';
+    if (this.db && this.db.isConnected()) {
+      try {
+        await this.db.query('SELECT 1');
+        services.database = 'ok';
+      } catch {
+        services.database = 'error';
+      }
+    } else {
+      services.database = 'not_configured';
     }
 
     // Check ML Engine
@@ -44,9 +47,6 @@ export class HealthController {
     } catch {
       services.mlEngine = 'error';
     }
-
-    // Check Redis (basic check via database pool if redis is available)
-    services.redis = services.database === 'ok' ? 'ok' : 'error';
 
     const allOk = Object.values(services).every((s) => s === 'ok');
 
