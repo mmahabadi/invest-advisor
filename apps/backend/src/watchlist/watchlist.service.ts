@@ -148,8 +148,8 @@ export class WatchlistService {
     const item = result.rows[0];
 
     // Get current quote and history
-    let quote;
-    let priceHistory;
+    let quote: { price: number };
+    let priceHistory: Array<{ timestamp: string; open: number; high: number; low: number; close: number; volume: number }> = [];
     try {
       quote = await this.marketDataService.getQuote(item.symbol);
       priceHistory = await this.marketDataService.getPriceHistory(item.symbol, '1m');

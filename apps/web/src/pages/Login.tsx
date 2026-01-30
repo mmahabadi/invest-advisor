@@ -4,6 +4,7 @@ import { TrendingUp, Mail, Lock, Loader2 } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { authApi } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
+import GoogleSignInButton from '../components/auth/GoogleSignInButton';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -56,6 +57,24 @@ export default function Login() {
               {error}
             </div>
           )}
+          
+          {/* Google Sign In */}
+          <div className="mb-6">
+            <GoogleSignInButton 
+              text="signin_with" 
+              onError={(err) => setError(err)} 
+            />
+          </div>
+          
+          {/* Divider */}
+          <div className="relative mb-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-surface-700"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-4 bg-surface-900/50 text-surface-500">or continue with email</span>
+            </div>
+          </div>
           
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>

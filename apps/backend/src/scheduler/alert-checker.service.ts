@@ -149,11 +149,11 @@ export class AlertCheckerService {
       case 'price_above':
         return price >= target;
       case 'buy_target':
-        return alert.buy_target && price <= Number(alert.buy_target);
+        return Boolean(alert.buy_target && price <= Number(alert.buy_target));
       case 'sell_target':
-        return alert.sell_target && price >= Number(alert.sell_target);
+        return Boolean(alert.sell_target && price >= Number(alert.sell_target));
       case 'stop_loss':
-        return alert.stop_loss && price <= Number(alert.stop_loss);
+        return Boolean(alert.stop_loss && price <= Number(alert.stop_loss));
       default:
         return false;
     }

@@ -48,6 +48,10 @@ NEWS_API_KEY=
 
 ```bash
 VITE_API_URL=http://localhost:3000/api/v1
+
+# Google OAuth (get from https://console.cloud.google.com/apis/credentials)
+# Create OAuth 2.0 Client ID for Web Application
+# Add http://localhost:5173 to Authorized JavaScript origins
 VITE_GOOGLE_CLIENT_ID=
 ```
 

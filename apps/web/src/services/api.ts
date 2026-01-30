@@ -62,6 +62,16 @@ export const authApi = {
     const response = await api.post('/auth/register', { email, password, name });
     return response.data;
   },
+  googleAuth: async (credential: string, googleId: string, email: string, name: string, avatarUrl?: string) => {
+    const response = await api.post('/auth/google', { 
+      credential, 
+      googleId, 
+      email, 
+      name, 
+      avatarUrl 
+    });
+    return response.data;
+  },
   getProfile: async () => {
     const response = await api.get('/auth/profile');
     return response.data;

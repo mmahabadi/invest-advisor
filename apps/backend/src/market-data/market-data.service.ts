@@ -17,7 +17,7 @@ interface QuoteData {
   pe?: number;
 }
 
-interface HistoricalData {
+export interface HistoricalData {
   timestamp: string;
   open: number;
   high: number;

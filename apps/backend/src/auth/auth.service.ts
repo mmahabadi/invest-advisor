@@ -74,6 +74,10 @@ export class AuthService {
     // For now, we'll trust the credential and extract user info
     // You should use google-auth-library to verify the token
     
+    if (!dto.googleId || !dto.email || !dto.name) {
+      throw new UnauthorizedException('Invalid Google auth data');
+    }
+    
     let user = await this.usersService.findByGoogleId(dto.googleId);
     
     if (!user) {

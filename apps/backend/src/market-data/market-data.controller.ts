@@ -1,5 +1,5 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
-import { MarketDataService } from './market-data.service';
+import { MarketDataService, HistoricalData } from './market-data.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('market')
@@ -41,7 +41,7 @@ export class MarketDataController {
   async getHistory(
     @Param('symbol') symbol: string,
     @Query('range') range: string = '1m',
-  ) {
+  ): Promise<{ symbol: string; range: string; data: HistoricalData[] }> {
     const data = await this.marketDataService.getPriceHistory(symbol, range);
     return {
       symbol,

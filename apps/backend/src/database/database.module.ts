@@ -18,7 +18,7 @@ const DATABASE_POOL = 'DATABASE_POOL';
           connectionTimeoutMillis: 2000,
         });
 
-        pool.on('error', (err) => {
+        pool.on('error', (err: Error) => {
           Logger.error('Unexpected error on idle client', err);
         });
 
