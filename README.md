@@ -64,6 +64,7 @@ For detailed information, see the [docs](./docs/) folder:
 - [ML Engine](./docs/ml-engine.md) - Machine learning components
 - [Tech Stack](./docs/tech-stack.md) - Technologies used
 - [Roadmap](./docs/roadmap.md) - Development phases
+- [Railway Deployment](./docs/railway-deployment.md) - Deploy to Railway
 
 ## 🔑 Key Features
 
@@ -96,6 +97,20 @@ For detailed information, see the [docs](./docs/) folder:
 - Sell alerts for portfolio items
 - Daily/weekly market summaries
 - Custom alert rules
+
+## 🚀 Deployment
+
+### Railway (Recommended)
+
+Deploy all services to Railway with one click:
+
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/invest-advisor)
+
+Or follow the [Railway Deployment Guide](./docs/railway-deployment.md) for manual setup.
+
+### Environment Variables
+
+See [ENV.example.md](./ENV.example.md) for all required environment variables.
 
 ## 📧 Contact
 

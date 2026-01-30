@@ -1,22 +1,46 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const logger = new Logger('Bootstrap');
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT', 3000);
   const frontendUrl = configService.get<string>('FRONTEND_URL', 'http://localhost:5173');
+  const nodeEnv = configService.get<string>('NODE_ENV', 'development');
 
   // Global prefix
   app.setGlobalPrefix('api/v1');
 
-  // CORS
+  // CORS - configure based on environment
+  const allowedOrigins = [frontendUrl];
+  
+  // In development, also allow localhost
+  if (nodeEnv === 'development') {
+    allowedOrigins.push('http://localhost:5173', 'http://localhost:3000');
+  }
+
   app.enableCors({
-    origin: [frontendUrl, 'http://localhost:5173'],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, Postman, etc.)
+      if (!origin) {
+        return callback(null, true);
+      }
+      
+      // Check if origin is allowed
+      if (allowedOrigins.some(allowed => origin.startsWith(allowed) || origin.includes('.railway.app'))) {
+        return callback(null, true);
+      }
+      
+      logger.warn(`Blocked CORS request from: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   });
 
   // Global validation pipe
@@ -31,8 +55,9 @@ async function bootstrap() {
     }),
   );
 
-  await app.listen(port);
-  console.log(`🚀 Backend API running on http://localhost:${port}/api/v1`);
+  await app.listen(port, '0.0.0.0');
+  logger.log(`🚀 Backend API running on port ${port} (${nodeEnv})`);
+  logger.log(`📍 API endpoint: http://localhost:${port}/api/v1`);
 }
 
 bootstrap();
