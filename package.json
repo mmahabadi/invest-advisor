@@ -1,0 +1,42 @@
+{
+  "name": "invest-advisor",
+  "version": "0.1.0",
+  "description": "Intelligent investment advisor with ML-powered predictions and email alerts",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "libs/*"
+  ],
+  "scripts": {
+    "dev": "docker-compose up",
+    "dev:backend": "cd apps/backend && npm run start:dev",
+    "dev:web": "cd apps/web && npm run dev",
+    "dev:ml": "cd apps/ml-engine && uvicorn app.main:app --reload",
+    "build": "npm run build:backend && npm run build:web",
+    "build:backend": "cd apps/backend && npm run build",
+    "build:web": "cd apps/web && npm run build",
+    "test": "npm run test:backend && npm run test:web",
+    "test:backend": "cd apps/backend && npm run test",
+    "test:web": "cd apps/web && npm run test",
+    "lint": "npm run lint:backend && npm run lint:web",
+    "lint:backend": "cd apps/backend && npm run lint",
+    "lint:web": "cd apps/web && npm run lint",
+    "db:migrate": "cd apps/backend && npm run migration:run",
+    "db:seed": "cd apps/backend && npm run seed"
+  },
+  "keywords": [
+    "investment",
+    "portfolio",
+    "stock",
+    "crypto",
+    "machine-learning",
+    "prediction",
+    "alerts"
+  ],
+  "author": "Mohsen Mahabadi",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

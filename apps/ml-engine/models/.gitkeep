@@ -1,0 +1,6 @@
+# This directory stores trained ML models
+# Models are not committed to git (see .gitignore)
+# They are either:
+# 1. Generated during training
+# 2. Downloaded from model registry
+# 3. Loaded from cloud storage in production
