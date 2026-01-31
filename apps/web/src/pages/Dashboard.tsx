@@ -276,14 +276,16 @@ function MarketTile({
   prefix = '' 
 }: { 
   name: string; 
-  value?: number | null; 
-  change?: number | null;
+  value?: number | string | null; 
+  change?: number | string | null;
   prefix?: string;
 }) {
-  if (value == null) return null;
+  const numValue = value != null ? Number(value) : null;
+  if (numValue == null || isNaN(numValue)) return null;
   
-  const changeValue = change ?? 0;
-  const isPositive = changeValue >= 0;
+  const changeValue = change != null ? Number(change) : 0;
+  const safeChangeValue = isNaN(changeValue) ? 0 : changeValue;
+  const isPositive = safeChangeValue >= 0;
   
   return (
     <div className="p-4 rounded-lg bg-surface-800/50 border border-surface-700/50">
@@ -296,11 +298,11 @@ function MarketTile({
         )}
       </div>
       <p className="text-lg font-semibold text-surface-100">
-        {prefix}{value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+        {prefix}{numValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
       </p>
-      {change != null && (
+      {change != null && !isNaN(safeChangeValue) && (
         <p className={`text-sm ${isPositive ? 'text-success-400' : 'text-danger-400'}`}>
-          {isPositive ? '+' : ''}{changeValue.toFixed(2)}%
+          {isPositive ? '+' : ''}{safeChangeValue.toFixed(2)}%
         </p>
       )}
     </div>

@@ -1,9 +1,16 @@
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import clsx from 'clsx';
 
+// Helper to safely convert any value to a number
+function toNumber(value: unknown): number {
+  if (value == null) return 0;
+  const num = Number(value);
+  return isNaN(num) ? 0 : num;
+}
+
 interface PriceChangeProps {
-  value?: number | null;
-  percentage?: number | null;
+  value?: number | string | null;
+  percentage?: number | string | null;
   showIcon?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }
@@ -14,8 +21,8 @@ export function PriceChange({
   showIcon = true,
   size = 'md'
 }: PriceChangeProps) {
-  const safeValue = value ?? 0;
-  const safePercentage = percentage ?? undefined;
+  const safeValue = toNumber(value);
+  const safePercentage = percentage != null ? toNumber(percentage) : null;
   
   const isPositive = safeValue > 0;
   const isNegative = safeValue < 0;
@@ -54,8 +61,8 @@ export function PriceChange({
   );
 }
 
-export function formatCurrency(value?: number | null, currency = 'USD'): string {
-  const safeValue = value ?? 0;
+export function formatCurrency(value?: number | string | null, currency = 'USD'): string {
+  const safeValue = toNumber(value);
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
@@ -64,8 +71,8 @@ export function formatCurrency(value?: number | null, currency = 'USD'): string 
   }).format(safeValue);
 }
 
-export function formatNumber(value?: number | null, decimals = 2): string {
-  const safeValue = value ?? 0;
+export function formatNumber(value?: number | string | null, decimals = 2): string {
+  const safeValue = toNumber(value);
   if (Math.abs(safeValue) >= 1e9) {
     return `${(safeValue / 1e9).toFixed(1)}B`;
   }
