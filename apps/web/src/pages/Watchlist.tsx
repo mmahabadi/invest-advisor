@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useAuthStore } from '../stores/authStore';
+import { SymbolSearch, SearchResult } from '../components/ui/SymbolSearch';
 import { Plus, Trash2, RefreshCw, Eye, AlertCircle } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/Card';
 import { Badge, RecommendationBadge, ConfidenceBadge } from '../components/ui/Badge';
@@ -233,42 +233,12 @@ function WatchlistCard({
   );
 }
 
-interface SearchResult {
-  symbol: string;
-  name: string;
-  type: string;
-  exchange: string;
-}
-
 function AddWatchlistModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
-  const { accessToken } = useAuthStore();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSymbol, setSelectedSymbol] = useState<SearchResult | null>(null);
-  const [showDropdown, setShowDropdown] = useState(false);
   const [formData, setFormData] = useState({
     symbol: '',
     assetType: 'stock',
     notes: '',
-  });
-  
-  // Search for symbols
-  const { data: searchResults, isLoading: isSearching } = useQuery<{ results: SearchResult[] }>({
-    queryKey: ['symbolSearch', searchQuery],
-    queryFn: async () => {
-      if (searchQuery.length < 1) return { results: [] };
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/market/search?q=${encodeURIComponent(searchQuery)}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken || ''}`,
-          },
-        }
-      );
-      return response.json();
-    },
-    enabled: searchQuery.length >= 1,
-    staleTime: 30000,
   });
   
   const addMutation = useMutation({
@@ -279,23 +249,12 @@ function AddWatchlistModal({ onClose }: { onClose: () => void }) {
     },
   });
   
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.toUpperCase();
-    setSearchQuery(value);
-    setFormData({ ...formData, symbol: value });
-    setSelectedSymbol(null);
-    setShowDropdown(true);
-  };
-  
-  const handleSelectSymbol = (result: SearchResult) => {
-    setSelectedSymbol(result);
-    setSearchQuery(result.symbol);
+  const handleSymbolChange = (symbol: string, result: SearchResult | null) => {
     setFormData({
       ...formData,
-      symbol: result.symbol,
-      assetType: result.type || 'stock',
+      symbol,
+      assetType: result?.type || formData.assetType,
     });
-    setShowDropdown(false);
   };
   
   const handleSubmit = (e: React.FormEvent) => {
@@ -310,77 +269,12 @@ function AddWatchlistModal({ onClose }: { onClose: () => void }) {
         <h2 className="text-xl font-semibold text-surface-100 mb-6">Add to Watchlist</h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="relative">
-            <label className="label">Search Symbol</label>
-            <input
-              type="text"
-              className="input"
-              placeholder="Search for AAPL, MSFT, BTC..."
-              value={searchQuery}
-              onChange={handleSearchChange}
-              onFocus={() => setShowDropdown(true)}
-              required
-            />
-            
-            {/* Search Results Dropdown */}
-            {showDropdown && searchQuery.length >= 1 && (
-              <div className="absolute z-10 w-full mt-1 bg-surface-800 border border-surface-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                {isSearching ? (
-                  <div className="p-3 text-surface-400 text-sm">Searching...</div>
-                ) : searchResults?.results && searchResults.results.length > 0 ? (
-                  searchResults.results.map((result) => (
-                    <button
-                      key={result.symbol}
-                      type="button"
-                      className="w-full px-4 py-3 text-left hover:bg-surface-700 transition-colors border-b border-surface-700/50 last:border-0"
-                      onClick={() => handleSelectSymbol(result)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className="font-semibold text-surface-100">{result.symbol}</span>
-                          <p className="text-sm text-surface-400 truncate">{result.name}</p>
-                        </div>
-                        <span className="text-xs bg-surface-700 px-2 py-1 rounded text-surface-400">
-                          {result.type || result.exchange}
-                        </span>
-                      </div>
-                    </button>
-                  ))
-                ) : searchQuery.length >= 2 ? (
-                  <div className="p-3 text-surface-400 text-sm">
-                    No results found. You can still add "{searchQuery}" manually.
-                  </div>
-                ) : (
-                  <div className="p-3 text-surface-400 text-sm">
-                    Type at least 2 characters to search
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {/* Selected Symbol Info */}
-            {selectedSymbol && (
-              <div className="mt-2 p-3 bg-surface-800 rounded-lg border border-primary-500/30">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="font-bold text-primary-400">{selectedSymbol.symbol}</span>
-                    <p className="text-sm text-surface-300">{selectedSymbol.name}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedSymbol(null);
-                      setSearchQuery('');
-                      setFormData({ ...formData, symbol: '' });
-                    }}
-                    className="text-surface-500 hover:text-surface-300"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <SymbolSearch
+            value={formData.symbol}
+            onChange={handleSymbolChange}
+            label="Search Symbol"
+            placeholder="Search for AAPL, MSFT, BTC..."
+          />
           
           <div>
             <label className="label">Asset Type</label>
