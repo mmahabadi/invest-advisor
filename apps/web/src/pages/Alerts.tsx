@@ -5,8 +5,16 @@ import { Card, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { formatCurrency } from '../components/ui/PriceChange';
 import { alertsApi } from '../services/api';
+import { useAuthStore } from '../stores/authStore';
 import { format } from 'date-fns';
 import type { Alert, AlertHistory } from '../types';
+
+interface SearchResult {
+  symbol: string;
+  name: string;
+  type: string;
+  exchange: string;
+}
 
 export default function AlertsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
@@ -245,11 +253,34 @@ function AlertHistoryRow({ item }: { item: AlertHistory }) {
 
 function AddAlertModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
+  const { accessToken } = useAuthStore();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedSymbol, setSelectedSymbol] = useState<SearchResult | null>(null);
+  const [showDropdown, setShowDropdown] = useState(false);
   const [formData, setFormData] = useState({
     symbol: '',
     alertType: 'price_below',
     targetPrice: '',
     isRecurring: false,
+  });
+  
+  // Search for symbols
+  const { data: searchResults, isLoading: isSearching } = useQuery<{ results: SearchResult[] }>({
+    queryKey: ['symbolSearch', searchQuery],
+    queryFn: async () => {
+      if (searchQuery.length < 1) return { results: [] };
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/market/search?q=${encodeURIComponent(searchQuery)}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken || ''}`,
+          },
+        }
+      );
+      return response.json();
+    },
+    enabled: searchQuery.length >= 1,
+    staleTime: 30000,
   });
   
   const addMutation = useMutation({
@@ -263,8 +294,24 @@ function AddAlertModal({ onClose }: { onClose: () => void }) {
     },
   });
   
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.toUpperCase();
+    setSearchQuery(value);
+    setFormData({ ...formData, symbol: value });
+    setSelectedSymbol(null);
+    setShowDropdown(true);
+  };
+  
+  const handleSelectSymbol = (result: SearchResult) => {
+    setSelectedSymbol(result);
+    setSearchQuery(result.symbol);
+    setFormData({ ...formData, symbol: result.symbol });
+    setShowDropdown(false);
+  };
+  
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.symbol) return;
     addMutation.mutate(formData);
   };
 
@@ -274,16 +321,76 @@ function AddAlertModal({ onClose }: { onClose: () => void }) {
         <h2 className="text-xl font-semibold text-surface-100 mb-6">Create Alert</h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="label">Symbol</label>
+          <div className="relative">
+            <label className="label">Search Symbol</label>
             <input
               type="text"
               className="input"
-              placeholder="e.g., AAPL"
-              value={formData.symbol}
-              onChange={(e) => setFormData({ ...formData, symbol: e.target.value.toUpperCase() })}
+              placeholder="Search for AAPL, MSFT, BTC..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+              onFocus={() => setShowDropdown(true)}
               required
             />
+            
+            {/* Search Results Dropdown */}
+            {showDropdown && searchQuery.length >= 1 && (
+              <div className="absolute z-10 w-full mt-1 bg-surface-800 border border-surface-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {isSearching ? (
+                  <div className="p-3 text-surface-400 text-sm">Searching...</div>
+                ) : searchResults?.results && searchResults.results.length > 0 ? (
+                  searchResults.results.map((result) => (
+                    <button
+                      key={result.symbol}
+                      type="button"
+                      className="w-full px-4 py-3 text-left hover:bg-surface-700 transition-colors border-b border-surface-700/50 last:border-0"
+                      onClick={() => handleSelectSymbol(result)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="font-semibold text-surface-100">{result.symbol}</span>
+                          <p className="text-sm text-surface-400 truncate">{result.name}</p>
+                        </div>
+                        <span className="text-xs bg-surface-700 px-2 py-1 rounded text-surface-400">
+                          {result.type || result.exchange}
+                        </span>
+                      </div>
+                    </button>
+                  ))
+                ) : searchQuery.length >= 2 ? (
+                  <div className="p-3 text-surface-400 text-sm">
+                    No results. You can still use "{searchQuery}".
+                  </div>
+                ) : (
+                  <div className="p-3 text-surface-400 text-sm">
+                    Type at least 2 characters to search
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Selected Symbol Info */}
+            {selectedSymbol && (
+              <div className="mt-2 p-3 bg-surface-800 rounded-lg border border-primary-500/30">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-bold text-primary-400">{selectedSymbol.symbol}</span>
+                    <p className="text-sm text-surface-300">{selectedSymbol.name}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedSymbol(null);
+                      setSearchQuery('');
+                      setFormData({ ...formData, symbol: '' });
+                    }}
+                    className="text-surface-500 hover:text-surface-300"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           
           <div>
@@ -327,6 +434,12 @@ function AddAlertModal({ onClose }: { onClose: () => void }) {
             </label>
           </div>
           
+          {addMutation.isError && (
+            <div className="bg-danger-500/10 border border-danger-500/30 rounded-lg p-3 text-sm text-danger-400">
+              {(addMutation.error as any)?.response?.data?.message || 'Failed to create alert'}
+            </div>
+          )}
+          
           <div className="flex gap-3 pt-4">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">
               Cancel
@@ -334,7 +447,7 @@ function AddAlertModal({ onClose }: { onClose: () => void }) {
             <button 
               type="submit" 
               className="btn-primary flex-1"
-              disabled={addMutation.isPending}
+              disabled={addMutation.isPending || !formData.symbol}
             >
               {addMutation.isPending ? 'Creating...' : 'Create Alert'}
             </button>

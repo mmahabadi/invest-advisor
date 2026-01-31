@@ -5,7 +5,15 @@ import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { PriceChange, formatCurrency } from '../components/ui/PriceChange';
 import { portfolioApi } from '../services/api';
+import { useAuthStore } from '../stores/authStore';
 import type { Portfolio, PortfolioItem } from '../types';
+
+// Helper to safely convert any value to a number
+function toNumber(value: unknown): number {
+  if (value == null) return 0;
+  const num = Number(value);
+  return isNaN(num) ? 0 : num;
+}
 
 export default function PortfolioPage() {
   const [showAddModal, setShowAddModal] = useState(false);
@@ -152,7 +160,9 @@ function PortfolioRow({
   item: PortfolioItem; 
   onDelete: () => void;
 }) {
-  const isPositive = item.profitLoss >= 0;
+  const profitLoss = toNumber(item.profitLoss);
+  const quantity = toNumber(item.quantity);
+  const isPositive = profitLoss >= 0;
   
   return (
     <tr className="border-b border-surface-800/50 hover:bg-surface-800/30">
@@ -175,7 +185,7 @@ function PortfolioRow({
         <Badge>{item.assetType}</Badge>
       </td>
       <td className="py-4 font-mono text-surface-200">
-        {item.quantity.toLocaleString(undefined, { maximumFractionDigits: 8 })}
+        {quantity.toLocaleString(undefined, { maximumFractionDigits: 8 })}
       </td>
       <td className="py-4 font-mono text-surface-300">
         {formatCurrency(item.avgCost)}
@@ -189,9 +199,9 @@ function PortfolioRow({
       <td className="py-4">
         <div>
           <p className={`font-medium ${isPositive ? 'text-success-400' : 'text-danger-400'}`}>
-            {isPositive ? '+' : ''}{formatCurrency(item.profitLoss)}
+            {isPositive ? '+' : ''}{formatCurrency(profitLoss)}
           </p>
-          <PriceChange value={item.profitLoss} percentage={item.profitLossPct} size="sm" />
+          <PriceChange value={profitLoss} percentage={item.profitLossPct} size="sm" />
         </div>
       </td>
       <td className="py-4">
@@ -206,8 +216,19 @@ function PortfolioRow({
   );
 }
 
+interface SearchResult {
+  symbol: string;
+  name: string;
+  type: string;
+  exchange: string;
+}
+
 function AddInvestmentModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
+  const { accessToken } = useAuthStore();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedSymbol, setSelectedSymbol] = useState<SearchResult | null>(null);
+  const [showDropdown, setShowDropdown] = useState(false);
   const [formData, setFormData] = useState({
     symbol: '',
     assetType: 'stock',
@@ -215,6 +236,25 @@ function AddInvestmentModal({ onClose }: { onClose: () => void }) {
     price: '',
     purchaseDate: new Date().toISOString().split('T')[0],
     notes: '',
+  });
+  
+  // Search for symbols
+  const { data: searchResults, isLoading: isSearching } = useQuery<{ results: SearchResult[] }>({
+    queryKey: ['symbolSearch', searchQuery],
+    queryFn: async () => {
+      if (searchQuery.length < 1) return { results: [] };
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/market/search?q=${encodeURIComponent(searchQuery)}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken || ''}`,
+          },
+        }
+      );
+      return response.json();
+    },
+    enabled: searchQuery.length >= 1,
+    staleTime: 30000,
   });
   
   const addMutation = useMutation({
@@ -229,27 +269,107 @@ function AddInvestmentModal({ onClose }: { onClose: () => void }) {
     },
   });
   
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.toUpperCase();
+    setSearchQuery(value);
+    setFormData({ ...formData, symbol: value });
+    setSelectedSymbol(null);
+    setShowDropdown(true);
+  };
+  
+  const handleSelectSymbol = (result: SearchResult) => {
+    setSelectedSymbol(result);
+    setSearchQuery(result.symbol);
+    setFormData({
+      ...formData,
+      symbol: result.symbol,
+      assetType: result.type || 'stock',
+    });
+    setShowDropdown(false);
+  };
+  
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.symbol) return;
     addMutation.mutate(formData);
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-surface-900 border border-surface-700 rounded-xl w-full max-w-md p-6">
+      <div className="bg-surface-900 border border-surface-700 rounded-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
         <h2 className="text-xl font-semibold text-surface-100 mb-6">Add Investment</h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="label">Symbol</label>
+          <div className="relative">
+            <label className="label">Search Symbol</label>
             <input
               type="text"
               className="input"
-              placeholder="e.g., AAPL"
-              value={formData.symbol}
-              onChange={(e) => setFormData({ ...formData, symbol: e.target.value.toUpperCase() })}
+              placeholder="Search for AAPL, MSFT, BTC..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+              onFocus={() => setShowDropdown(true)}
               required
             />
+            
+            {/* Search Results Dropdown */}
+            {showDropdown && searchQuery.length >= 1 && (
+              <div className="absolute z-10 w-full mt-1 bg-surface-800 border border-surface-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {isSearching ? (
+                  <div className="p-3 text-surface-400 text-sm">Searching...</div>
+                ) : searchResults?.results && searchResults.results.length > 0 ? (
+                  searchResults.results.map((result) => (
+                    <button
+                      key={result.symbol}
+                      type="button"
+                      className="w-full px-4 py-3 text-left hover:bg-surface-700 transition-colors border-b border-surface-700/50 last:border-0"
+                      onClick={() => handleSelectSymbol(result)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="font-semibold text-surface-100">{result.symbol}</span>
+                          <p className="text-sm text-surface-400 truncate">{result.name}</p>
+                        </div>
+                        <span className="text-xs bg-surface-700 px-2 py-1 rounded text-surface-400">
+                          {result.type || result.exchange}
+                        </span>
+                      </div>
+                    </button>
+                  ))
+                ) : searchQuery.length >= 2 ? (
+                  <div className="p-3 text-surface-400 text-sm">
+                    No results. You can still add "{searchQuery}" manually.
+                  </div>
+                ) : (
+                  <div className="p-3 text-surface-400 text-sm">
+                    Type at least 2 characters to search
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Selected Symbol Info */}
+            {selectedSymbol && (
+              <div className="mt-2 p-3 bg-surface-800 rounded-lg border border-primary-500/30">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-bold text-primary-400">{selectedSymbol.symbol}</span>
+                    <p className="text-sm text-surface-300">{selectedSymbol.name}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedSymbol(null);
+                      setSearchQuery('');
+                      setFormData({ ...formData, symbol: '' });
+                    }}
+                    className="text-surface-500 hover:text-surface-300"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           
           <div>
@@ -314,6 +434,12 @@ function AddInvestmentModal({ onClose }: { onClose: () => void }) {
             />
           </div>
           
+          {addMutation.isError && (
+            <div className="bg-danger-500/10 border border-danger-500/30 rounded-lg p-3 text-sm text-danger-400">
+              {(addMutation.error as any)?.response?.data?.message || 'Failed to add investment'}
+            </div>
+          )}
+          
           <div className="flex gap-3 pt-4">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">
               Cancel
@@ -321,7 +447,7 @@ function AddInvestmentModal({ onClose }: { onClose: () => void }) {
             <button 
               type="submit" 
               className="btn-primary flex-1"
-              disabled={addMutation.isPending}
+              disabled={addMutation.isPending || !formData.symbol}
             >
               {addMutation.isPending ? 'Adding...' : 'Add Investment'}
             </button>
