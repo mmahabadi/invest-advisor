@@ -97,31 +97,138 @@ export class MarketDataService {
   }
 
   async searchSymbol(query: string) {
+    const results: Array<{ symbol: string; name: string; type: string; exchange: string }> = [];
+    
     try {
-      // Use Yahoo Finance search or fallback to common symbols
+      // Check if query looks like an ISIN (2 letters + 10 alphanumeric)
+      const isIsin = /^[A-Z]{2}[A-Z0-9]{10}$/i.test(query);
+      
+      // Check if query looks like a German WKN (6 alphanumeric)
+      const isWkn = /^[A-Z0-9]{6}$/i.test(query) && !isIsin;
+      
+      // If ISIN, try OpenFIGI API first
+      if (isIsin) {
+        try {
+          const figiResponse = await axios.post(
+            'https://api.openfigi.com/v3/mapping',
+            [{ idType: 'ID_ISIN', idValue: query.toUpperCase() }],
+            {
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              timeout: 5000,
+            },
+          );
+          
+          if (figiResponse.data?.[0]?.data) {
+            const figiResults = figiResponse.data[0].data;
+            for (const item of figiResults.slice(0, 5)) {
+              if (item.ticker) {
+                // Map exchange to Yahoo Finance suffix
+                const suffix = this.getYahooSuffix(item.exchCode);
+                const symbol = suffix ? `${item.ticker}${suffix}` : item.ticker;
+                results.push({
+                  symbol,
+                  name: item.name || item.ticker,
+                  type: this.mapSecurityType(item.securityType),
+                  exchange: item.exchCode || 'Unknown',
+                });
+              }
+            }
+          }
+        } catch (e) {
+          this.logger.warn('OpenFIGI lookup failed', e);
+        }
+      }
+      
+      // Try Yahoo Finance search
       const response = await axios.get(
         `https://query1.finance.yahoo.com/v1/finance/search`,
         {
           params: {
             q: query,
-            quotesCount: 10,
+            quotesCount: 15,
             newsCount: 0,
           },
           headers: {
             'User-Agent': 'Mozilla/5.0',
           },
+          timeout: 5000,
         },
       );
 
-      return response.data.quotes.map((q: any) => ({
+      const yahooResults = response.data.quotes.map((q: any) => ({
         symbol: q.symbol,
-        name: q.shortname || q.longname,
+        name: q.shortname || q.longname || q.symbol,
         type: this.mapExchangeToType(q.exchange),
         exchange: q.exchange,
       }));
-    } catch {
-      return [];
+      
+      // Add Yahoo results, avoiding duplicates
+      for (const result of yahooResults) {
+        if (!results.find(r => r.symbol === result.symbol)) {
+          results.push(result);
+        }
+      }
+      
+      // If query looks like a ticker and few results, suggest European exchange variants
+      if (results.length < 5 && query.length >= 2 && query.length <= 6 && !query.includes('.')) {
+        const euroSuffixes = ['.L', '.DE', '.AS', '.PA', '.MI', '.SW'];
+        for (const suffix of euroSuffixes) {
+          const euroSymbol = `${query.toUpperCase()}${suffix}`;
+          if (!results.find(r => r.symbol === euroSymbol)) {
+            // Try to verify this symbol exists
+            try {
+              const quote = await this.getQuote(euroSymbol);
+              if (quote && quote.price > 0) {
+                results.push({
+                  symbol: euroSymbol,
+                  name: quote.name || euroSymbol,
+                  type: 'etf',
+                  exchange: suffix.replace('.', ''),
+                });
+              }
+            } catch {
+              // Symbol doesn't exist, skip
+            }
+          }
+          // Limit total results
+          if (results.length >= 10) break;
+        }
+      }
+      
+      return results.slice(0, 15);
+    } catch (e) {
+      this.logger.error('Symbol search failed', e);
+      return results;
     }
+  }
+  
+  private getYahooSuffix(exchCode: string): string {
+    const exchangeMap: Record<string, string> = {
+      'LN': '.L',      // London
+      'GY': '.DE',     // Germany (Xetra)
+      'GR': '.DE',     // Germany
+      'NA': '.AS',     // Amsterdam
+      'FP': '.PA',     // Paris
+      'IM': '.MI',     // Milan
+      'SW': '.SW',     // Swiss
+      'SS': '.SS',     // Shanghai
+      'HK': '.HK',     // Hong Kong
+      'T': '.T',       // Tokyo
+      'TO': '.TO',     // Toronto
+      'AX': '.AX',     // Australia
+    };
+    return exchangeMap[exchCode] || '';
+  }
+  
+  private mapSecurityType(secType: string): string {
+    if (!secType) return 'stock';
+    const type = secType.toLowerCase();
+    if (type.includes('etp') || type.includes('etf')) return 'etf';
+    if (type.includes('fund')) return 'fund';
+    if (type.includes('index')) return 'index';
+    return 'stock';
   }
 
   async getMarketOverview() {
