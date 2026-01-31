@@ -28,13 +28,47 @@ function detectQueryType(query: string): 'isin' | 'wkn' | 'ticker' | 'name' {
 
 // Common European ETF suggestions
 const EUROPEAN_SUFFIXES = [
-  { suffix: '.L', exchange: 'London', flag: '🇬🇧' },
   { suffix: '.DE', exchange: 'Frankfurt', flag: '🇩🇪' },
+  { suffix: '.L', exchange: 'London', flag: '🇬🇧' },
   { suffix: '.AS', exchange: 'Amsterdam', flag: '🇳🇱' },
   { suffix: '.PA', exchange: 'Paris', flag: '🇫🇷' },
   { suffix: '.MI', exchange: 'Milan', flag: '🇮🇹' },
   { suffix: '.SW', exchange: 'Swiss', flag: '🇨🇭' },
 ];
+
+// US stocks have different tickers on German exchanges (Xetra)
+const US_TO_GERMAN: Record<string, string> = {
+  'TSLA': 'TL0',
+  'AAPL': 'APC',
+  'MSFT': 'MSF',
+  'AMZN': 'AMZ',
+  'GOOGL': 'ABEA',
+  'META': 'FB2A',
+  'NVDA': 'NVD',
+  'AMD': 'AMD',
+  'NFLX': 'NFC',
+  'DIS': 'WDP',
+  'PYPL': '2PP',
+  'INTC': 'INL',
+  'CSCO': 'CIS',
+  'ORCL': 'ORC',
+  'BA': 'BCO',
+  'JPM': 'CMC',
+  'V': '3V64',
+  'MA': 'M4I',
+  'JNJ': 'JNJ',
+  'KO': 'CCC3',
+  'PEP': 'PEP',
+  'MCD': 'MDO',
+  'NKE': 'NKE',
+  'SBUX': 'SRB',
+  'UBER': 'UT8',
+  'ABNB': '7AB',
+  'PLTR': 'PTX',
+  'COIN': '1QZ',
+  'RIVN': '7RN',
+  'NIO': 'NT0',
+};
 
 export function SymbolSearch({ 
   value, 
@@ -179,29 +213,58 @@ export function SymbolSearch({
                 <div className="border-t border-surface-700 p-3">
                   <div className="flex items-center gap-2 text-xs text-surface-500 mb-2">
                     <Globe className="w-3 h-3" />
-                    Try European exchanges:
+                    Try European exchanges (Trade Republic compatible):
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {EUROPEAN_SUFFIXES.map(({ suffix, exchange, flag }) => (
+                    {/* Show German ticker first if available */}
+                    {US_TO_GERMAN[searchQuery.toUpperCase()] && (
                       <button
-                        key={suffix}
                         type="button"
-                        className="px-2 py-1 text-xs bg-surface-700 hover:bg-surface-600 rounded text-surface-300 transition-colors"
+                        className="px-2 py-1 text-xs bg-primary-600 hover:bg-primary-500 rounded text-white transition-colors font-medium"
                         onMouseDown={(e) => {
                           e.preventDefault();
-                          const euroSymbol = `${searchQuery.toUpperCase()}${suffix}`;
+                          const germanTicker = US_TO_GERMAN[searchQuery.toUpperCase()];
+                          const euroSymbol = `${germanTicker}.DE`;
                           handleSelectSymbol({
                             symbol: euroSymbol,
-                            name: `${searchQuery.toUpperCase()} (${exchange})`,
-                            type: 'etf',
-                            exchange,
+                            name: `${searchQuery.toUpperCase()} on Xetra (EUR)`,
+                            type: 'stock',
+                            exchange: 'XETRA',
                           });
                         }}
                       >
-                        {flag} {searchQuery.toUpperCase()}{suffix}
+                        🇩🇪 {US_TO_GERMAN[searchQuery.toUpperCase()]}.DE ⭐
                       </button>
-                    ))}
+                    )}
+                    {EUROPEAN_SUFFIXES.map(({ suffix, exchange, flag }) => {
+                      // Skip .DE for US stocks that have German equivalents (already shown above)
+                      if (suffix === '.DE' && US_TO_GERMAN[searchQuery.toUpperCase()]) return null;
+                      return (
+                        <button
+                          key={suffix}
+                          type="button"
+                          className="px-2 py-1 text-xs bg-surface-700 hover:bg-surface-600 rounded text-surface-300 transition-colors"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            const euroSymbol = `${searchQuery.toUpperCase()}${suffix}`;
+                            handleSelectSymbol({
+                              symbol: euroSymbol,
+                              name: `${searchQuery.toUpperCase()} (${exchange})`,
+                              type: 'stock',
+                              exchange,
+                            });
+                          }}
+                        >
+                          {flag} {searchQuery.toUpperCase()}{suffix}
+                        </button>
+                      );
+                    })}
                   </div>
+                  {US_TO_GERMAN[searchQuery.toUpperCase()] && (
+                    <p className="text-xs text-surface-500 mt-2">
+                      ⭐ = Recommended for Trade Republic (matches EUR prices)
+                    </p>
+                  )}
                 </div>
               )}
               
@@ -210,10 +273,12 @@ export function SymbolSearch({
                 <div className="border-t border-surface-700 p-3 text-xs text-surface-500">
                   <p className="font-medium text-surface-400 mb-1">💡 Search tips:</p>
                   <ul className="space-y-1 ml-2">
-                    <li>• Ticker: <span className="text-surface-300">AAPL, MSFT, VUAA</span></li>
+                    <li>• US Ticker: <span className="text-surface-300">AAPL, MSFT, TSLA</span></li>
+                    <li>• German/Xetra: <span className="text-surface-300">TL0.DE (Tesla), APC.DE (Apple)</span></li>
+                    <li>• ETF: <span className="text-surface-300">VUAA.DE, CSPX.L</span></li>
                     <li>• ISIN: <span className="text-surface-300">IE00BFMXXD54</span></li>
-                    <li>• European: <span className="text-surface-300">VUAA.L, CSPX.DE</span></li>
                   </ul>
+                  <p className="mt-2 text-primary-400">Type a US ticker to see German equivalents!</p>
                 </div>
               )}
             </>

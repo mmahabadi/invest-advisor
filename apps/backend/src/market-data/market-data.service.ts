@@ -26,6 +26,66 @@ export interface HistoricalData {
   volume: number;
 }
 
+// Mapping of US tickers to their German (Xetra) equivalents
+const US_TO_GERMAN_TICKERS: Record<string, string> = {
+  'TSLA': 'TL0',
+  'AAPL': 'APC',
+  'MSFT': 'MSF',
+  'AMZN': 'AMZ',
+  'GOOGL': 'ABEA',
+  'GOOG': 'ABEC',
+  'META': 'FB2A',
+  'NVDA': 'NVD',
+  'AMD': 'AMD',
+  'NFLX': 'NFC',
+  'DIS': 'WDP',
+  'PYPL': '2PP',
+  'INTC': 'INL',
+  'CSCO': 'CIS',
+  'ORCL': 'ORC',
+  'IBM': 'IBM',
+  'BA': 'BCO',
+  'JPM': 'CMC',
+  'V': '3V64',
+  'MA': 'M4I',
+  'JNJ': 'JNJ',
+  'PG': 'PRG',
+  'KO': 'CCC3',
+  'PEP': 'PEP',
+  'MCD': 'MDO',
+  'NKE': 'NKE',
+  'SBUX': 'SRB',
+  'WMT': 'WMT',
+  'HD': 'HDI',
+  'COST': 'CTO',
+  'UNH': 'UNH',
+  'PFE': 'PFE',
+  'MRK': 'MRK',
+  'ABBV': '4AB',
+  'LLY': 'LLY',
+  'TMO': '1TM',
+  'ABT': 'ABT',
+  'CVX': 'CHV',
+  'XOM': 'XONA',
+  'T': 'SOBA',
+  'VZ': 'BAC',
+  'CRM': '1SF',
+  'ADBE': '2AD',
+  'NOW': '2SI',
+  'UBER': 'UT8',
+  'ABNB': '7AB',
+  'SQ': '4SQ',
+  'SHOP': '1SH',
+  'PLTR': 'PTX',
+  'COIN': '1QZ',
+  'HOOD': '48H',
+  'RIVN': '7RN',
+  'LCID': '8LC',
+  'NIO': 'NT0',
+  'F': 'F',
+  'GM': '8GM',
+};
+
 @Injectable()
 export class MarketDataService {
   private readonly logger = new Logger(MarketDataService.name);
@@ -195,29 +255,52 @@ export class MarketDataService {
       const baseTicker = upperQuery.includes('.') ? upperQuery.split('.')[0] : upperQuery;
       
       // Always try to add European exchange variants for common tickers
-      if (baseTicker.length >= 2 && baseTicker.length <= 5) {
-        const euroSuffixes = ['.DE', '.L', '.AS', '.PA', '.MI', '.SW'];
+      if (baseTicker.length >= 1 && baseTicker.length <= 6) {
+        // Check if there's a German equivalent for this US ticker
+        const germanTicker = US_TO_GERMAN_TICKERS[baseTicker];
         
-        // Check European variants in parallel for speed
-        const euroChecks = euroSuffixes.map(async (suffix) => {
-          const euroSymbol = `${baseTicker}${suffix}`;
-          if (results.find(r => r.symbol === euroSymbol)) return null;
+        // Symbols to check on European exchanges
+        const tickersToCheck = germanTicker 
+          ? [germanTicker, baseTicker] // Check German ticker first, then original
+          : [baseTicker];
+        
+        const euroChecks: Promise<{ symbol: string; name: string; type: string; exchange: string } | null>[] = [];
+        
+        for (const ticker of tickersToCheck) {
+          // Prioritize .DE (German/Xetra) for German tickers
+          const suffixes = germanTicker && ticker === germanTicker 
+            ? ['.DE'] // Only check German exchange for German tickers
+            : ['.DE', '.L', '.AS', '.PA', '.MI', '.SW'];
           
-          try {
-            const quote = await this.getQuote(euroSymbol);
-            if (quote && quote.price > 0) {
-              return {
-                symbol: euroSymbol,
-                name: quote.name || euroSymbol,
-                type: this.detectAssetType(euroSymbol),
-                exchange: suffix.replace('.', ''),
-              };
-            }
-          } catch {
-            // Symbol doesn't exist
+          for (const suffix of suffixes) {
+            const euroSymbol = `${ticker}${suffix}`;
+            if (results.find(r => r.symbol === euroSymbol)) continue;
+            
+            euroChecks.push(
+              (async () => {
+                try {
+                  const quote = await this.getQuote(euroSymbol);
+                  if (quote && quote.price > 0) {
+                    // For German tickers, show the US ticker in the name for clarity
+                    const displayName = germanTicker && ticker === germanTicker
+                      ? `${quote.name} (${baseTicker})`
+                      : quote.name || euroSymbol;
+                    
+                    return {
+                      symbol: euroSymbol,
+                      name: displayName,
+                      type: this.detectAssetType(euroSymbol),
+                      exchange: suffix.replace('.', ''),
+                    };
+                  }
+                } catch {
+                  // Symbol doesn't exist
+                }
+                return null;
+              })()
+            );
           }
-          return null;
-        });
+        }
         
         const euroResults = await Promise.all(euroChecks);
         for (const euroResult of euroResults) {
