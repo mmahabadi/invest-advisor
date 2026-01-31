@@ -98,20 +98,38 @@ export class MarketDataService {
 
   async searchSymbol(query: string) {
     const results: Array<{ symbol: string; name: string; type: string; exchange: string }> = [];
+    const upperQuery = query.toUpperCase().trim();
     
     try {
       // Check if query looks like an ISIN (2 letters + 10 alphanumeric)
-      const isIsin = /^[A-Z]{2}[A-Z0-9]{10}$/i.test(query);
+      const isIsin = /^[A-Z]{2}[A-Z0-9]{10}$/i.test(upperQuery);
       
-      // Check if query looks like a German WKN (6 alphanumeric)
-      const isWkn = /^[A-Z0-9]{6}$/i.test(query) && !isIsin;
+      // Check if query includes an exchange suffix (e.g., TSLA.DE, AAPL.L)
+      const hasExchangeSuffix = /\.[A-Z]{1,3}$/i.test(upperQuery);
+      
+      // If user explicitly searched for a symbol with exchange suffix, verify it first
+      if (hasExchangeSuffix) {
+        try {
+          const quote = await this.getQuote(upperQuery);
+          if (quote && quote.price > 0) {
+            results.push({
+              symbol: upperQuery,
+              name: quote.name || upperQuery,
+              type: this.detectAssetType(upperQuery),
+              exchange: upperQuery.split('.')[1] || 'Unknown',
+            });
+          }
+        } catch {
+          // Symbol doesn't exist, continue with search
+        }
+      }
       
       // If ISIN, try OpenFIGI API first
       if (isIsin) {
         try {
           const figiResponse = await axios.post(
             'https://api.openfigi.com/v3/mapping',
-            [{ idType: 'ID_ISIN', idValue: query.toUpperCase() }],
+            [{ idType: 'ID_ISIN', idValue: upperQuery }],
             {
               headers: {
                 'Content-Type': 'application/json',
@@ -127,12 +145,14 @@ export class MarketDataService {
                 // Map exchange to Yahoo Finance suffix
                 const suffix = this.getYahooSuffix(item.exchCode);
                 const symbol = suffix ? `${item.ticker}${suffix}` : item.ticker;
-                results.push({
-                  symbol,
-                  name: item.name || item.ticker,
-                  type: this.mapSecurityType(item.securityType),
-                  exchange: item.exchCode || 'Unknown',
-                });
+                if (!results.find(r => r.symbol === symbol)) {
+                  results.push({
+                    symbol,
+                    name: item.name || item.ticker,
+                    type: this.mapSecurityType(item.securityType),
+                    exchange: item.exchCode || 'Unknown',
+                  });
+                }
               }
             }
           }
@@ -171,29 +191,39 @@ export class MarketDataService {
         }
       }
       
-      // If query looks like a ticker and few results, suggest European exchange variants
-      if (results.length < 5 && query.length >= 2 && query.length <= 6 && !query.includes('.')) {
-        const euroSuffixes = ['.L', '.DE', '.AS', '.PA', '.MI', '.SW'];
-        for (const suffix of euroSuffixes) {
-          const euroSymbol = `${query.toUpperCase()}${suffix}`;
-          if (!results.find(r => r.symbol === euroSymbol)) {
-            // Try to verify this symbol exists
-            try {
-              const quote = await this.getQuote(euroSymbol);
-              if (quote && quote.price > 0) {
-                results.push({
-                  symbol: euroSymbol,
-                  name: quote.name || euroSymbol,
-                  type: 'etf',
-                  exchange: suffix.replace('.', ''),
-                });
-              }
-            } catch {
-              // Symbol doesn't exist, skip
+      // Extract base ticker (remove exchange suffix if present)
+      const baseTicker = upperQuery.includes('.') ? upperQuery.split('.')[0] : upperQuery;
+      
+      // Always try to add European exchange variants for common tickers
+      if (baseTicker.length >= 2 && baseTicker.length <= 5) {
+        const euroSuffixes = ['.DE', '.L', '.AS', '.PA', '.MI', '.SW'];
+        
+        // Check European variants in parallel for speed
+        const euroChecks = euroSuffixes.map(async (suffix) => {
+          const euroSymbol = `${baseTicker}${suffix}`;
+          if (results.find(r => r.symbol === euroSymbol)) return null;
+          
+          try {
+            const quote = await this.getQuote(euroSymbol);
+            if (quote && quote.price > 0) {
+              return {
+                symbol: euroSymbol,
+                name: quote.name || euroSymbol,
+                type: this.detectAssetType(euroSymbol),
+                exchange: suffix.replace('.', ''),
+              };
             }
+          } catch {
+            // Symbol doesn't exist
           }
-          // Limit total results
-          if (results.length >= 10) break;
+          return null;
+        });
+        
+        const euroResults = await Promise.all(euroChecks);
+        for (const euroResult of euroResults) {
+          if (euroResult && !results.find(r => r.symbol === euroResult.symbol)) {
+            results.push(euroResult);
+          }
         }
       }
       
