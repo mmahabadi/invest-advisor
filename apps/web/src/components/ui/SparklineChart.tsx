@@ -50,7 +50,6 @@ export function SparklineChart({
   }));
 
   const strokeColor = isPositive ? '#22c55e' : '#ef4444';
-  const fillColor = isPositive ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)';
 
   return (
     <div className={className} style={{ height }}>

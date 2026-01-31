@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { Plus, Trash2, TrendingUp, TrendingDown, BarChart2 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
-import { Badge } from '../components/ui/Badge';
 import { PriceChange } from '../components/ui/PriceChange';
 import { SymbolSearch, SearchResult } from '../components/ui/SymbolSearch';
 import { SparklineChart } from '../components/ui/SparklineChart';
