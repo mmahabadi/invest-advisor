@@ -3,6 +3,7 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
+startCommand = "node dist/main.js"
 healthcheckPath = "/api/v1/health"
 healthcheckTimeout = 300
 numReplicas = 1
