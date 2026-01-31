@@ -1,16 +1,20 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SymbolSearch, SearchResult } from '../components/ui/SymbolSearch';
-import { Plus, Trash2, RefreshCw, Eye, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, Eye, AlertCircle, BarChart2 } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/Card';
 import { Badge, RecommendationBadge, ConfidenceBadge } from '../components/ui/Badge';
-import { PriceChange, formatCurrency } from '../components/ui/PriceChange';
+import { PriceChange } from '../components/ui/PriceChange';
+import { SparklineChart } from '../components/ui/SparklineChart';
+import { PriceChart } from '../components/ui/PriceChart';
+import { formatEUR } from '../utils/currency';
 import { watchlistApi } from '../services/api';
 import type { WatchlistItem } from '../types';
 
 export default function WatchlistPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [filter, setFilter] = useState<string>('');
+  const [chartSymbol, setChartSymbol] = useState<{ symbol: string; name: string } | null>(null);
   const queryClient = useQueryClient();
   
   const { data, isLoading } = useQuery<{ items: WatchlistItem[] }>({
@@ -104,6 +108,7 @@ export default function WatchlistPage() {
               onDelete={() => deleteMutation.mutate(item.id)}
               onRefresh={() => refreshMutation.mutate(item.id)}
               isRefreshing={refreshMutation.isPending}
+              onShowChart={() => setChartSymbol({ symbol: item.symbol, name: item.assetName || '' })}
             />
           ))}
         </div>
@@ -113,6 +118,15 @@ export default function WatchlistPage() {
       {showAddModal && (
         <AddWatchlistModal onClose={() => setShowAddModal(false)} />
       )}
+
+      {/* Chart Modal */}
+      {chartSymbol && (
+        <PriceChart
+          symbol={chartSymbol.symbol}
+          name={chartSymbol.name}
+          onClose={() => setChartSymbol(null)}
+        />
+      )}
     </div>
   );
 }
@@ -121,12 +135,14 @@ function WatchlistCard({
   item, 
   onDelete, 
   onRefresh,
-  isRefreshing 
+  isRefreshing,
+  onShowChart
 }: { 
   item: WatchlistItem;
   onDelete: () => void;
   onRefresh: () => void;
   isRefreshing: boolean;
+  onShowChart: () => void;
 }) {
   const target = item.targetPrice;
   const nearBuyTarget = item.distanceToBuyPct != null && item.distanceToBuyPct <= 5;
@@ -135,30 +151,46 @@ function WatchlistCard({
     <Card className={nearBuyTarget ? 'ring-1 ring-success-500/50' : ''}>
       <CardContent>
         <div className="flex items-start justify-between mb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-lg font-bold text-surface-100">{item.symbol}</h3>
-              {nearBuyTarget && (
-                <Badge variant="success">Near Target</Badge>
-              )}
+          <div className="flex items-start gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold text-surface-100">{item.symbol}</h3>
+                {nearBuyTarget && (
+                  <Badge variant="success">Near Target</Badge>
+                )}
+              </div>
+              <p className="text-sm text-surface-500">{item.assetName}</p>
             </div>
-            <p className="text-sm text-surface-500">{item.assetName}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onShowChart}
+              className="p-2 rounded-lg hover:bg-surface-700 text-surface-400 hover:text-primary-400 transition-colors"
+              title="View Chart"
+            >
+              <BarChart2 className="w-4 h-4" />
+            </button>
             <button
               onClick={onRefresh}
               disabled={isRefreshing}
               className="p-2 rounded-lg hover:bg-surface-700 text-surface-400 hover:text-primary-400 transition-colors disabled:opacity-50"
+              title="Refresh Analysis"
             >
               <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
             </button>
             <button
               onClick={onDelete}
               className="p-2 rounded-lg hover:bg-surface-700 text-surface-500 hover:text-danger-400 transition-colors"
+              title="Remove"
             >
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
+        </div>
+
+        {/* Mini Chart */}
+        <div className="mb-4 bg-surface-800/30 rounded-lg p-2">
+          <SparklineChart symbol={item.symbol} range="1w" height={50} />
         </div>
         
         {/* Price Info */}
@@ -166,7 +198,7 @@ function WatchlistCard({
           <div>
             <p className="text-xs text-surface-500 mb-1">Current Price</p>
             <p className="text-lg font-mono font-semibold text-surface-100">
-              {formatCurrency(item.currentPrice)}
+              {formatEUR(item.currentPrice)}
             </p>
             <PriceChange 
               value={item.priceChange24h} 
@@ -177,7 +209,7 @@ function WatchlistCard({
           <div>
             <p className="text-xs text-surface-500 mb-1">Buy Target</p>
             <p className="text-lg font-mono font-semibold text-success-400">
-              {target?.buyTarget ? formatCurrency(target.buyTarget) : '—'}
+              {target?.buyTarget ? formatEUR(target.buyTarget) : '—'}
             </p>
             {item.distanceToBuyPct != null && (
               <p className="text-xs text-surface-500">
@@ -188,7 +220,7 @@ function WatchlistCard({
           <div>
             <p className="text-xs text-surface-500 mb-1">Sell Target</p>
             <p className="text-lg font-mono font-semibold text-primary-400">
-              {target?.sellTarget ? formatCurrency(target.sellTarget) : '—'}
+              {target?.sellTarget ? formatEUR(target.sellTarget) : '—'}
             </p>
           </div>
         </div>

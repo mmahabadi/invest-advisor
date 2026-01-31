@@ -11,7 +11,8 @@ import {
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Badge, RecommendationBadge, ConfidenceBadge } from '../components/ui/Badge';
-import { PriceChange, formatCurrency } from '../components/ui/PriceChange';
+import { PriceChange } from '../components/ui/PriceChange';
+import { formatEUR } from '../utils/currency';
 import { portfolioApi, watchlistApi, marketApi } from '../services/api';
 import type { Portfolio, WatchlistItem, MarketOverview } from '../types';
 
@@ -50,14 +51,14 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard
           title="Portfolio Value"
-          value={formatCurrency(summary?.currentValue || 0)}
+          value={formatEUR(summary?.currentValue || 0)}
           change={summary?.todayChangePct || 0}
           icon={Wallet}
           iconColor="bg-primary-500"
         />
         <SummaryCard
           title="Total Profit/Loss"
-          value={formatCurrency(summary?.profitLoss || 0)}
+          value={formatEUR(summary?.profitLoss || 0)}
           change={summary?.profitLossPct || 0}
           icon={(summary?.profitLoss ?? 0) >= 0 ? TrendingUp : TrendingDown}
           iconColor={(summary?.profitLoss ?? 0) >= 0 ? 'bg-success-500' : 'bg-danger-500'}
@@ -110,19 +111,16 @@ export default function Dashboard() {
                 name="Bitcoin"
                 value={market?.crypto?.btc?.price}
                 change={market?.crypto?.btc?.change24h}
-                prefix="$"
               />
               <MarketTile
                 name="Ethereum"
                 value={market?.crypto?.eth?.price}
                 change={market?.crypto?.eth?.change24h}
-                prefix="$"
               />
               <MarketTile
                 name="Gold"
                 value={market?.commodities?.gold?.price}
                 change={market?.commodities?.gold?.change}
-                prefix="$"
               />
             </div>
           </CardContent>
@@ -144,7 +142,7 @@ export default function Dashboard() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-surface-100">{item.symbol}</p>
-                    <p className="text-xs text-surface-500">{formatCurrency(item.currentValue)}</p>
+                    <p className="text-xs text-surface-500">{formatEUR(item.currentValue)}</p>
                   </div>
                 </div>
                 <PriceChange value={item.profitLoss} percentage={item.profitLossPct} size="sm" />
@@ -194,13 +192,13 @@ export default function Dashboard() {
                     </td>
                     <td className="py-4">
                       <p className="font-mono text-surface-200">
-                        {formatCurrency(item.currentPrice)}
+                        {formatEUR(item.currentPrice)}
                       </p>
                       <PriceChange value={item.priceChange24h} percentage={item.priceChangePct24h} size="sm" />
                     </td>
                     <td className="py-4 font-mono text-surface-300">
                       {item.targetPrice?.buyTarget 
-                        ? formatCurrency(item.targetPrice.buyTarget)
+                        ? formatEUR(item.targetPrice.buyTarget)
                         : '—'}
                     </td>
                     <td className="py-4">
@@ -273,12 +271,10 @@ function MarketTile({
   name, 
   value, 
   change,
-  prefix = '' 
 }: { 
   name: string; 
   value?: number | string | null; 
   change?: number | string | null;
-  prefix?: string;
 }) {
   const numValue = value != null ? Number(value) : null;
   if (numValue == null || isNaN(numValue)) return null;
@@ -286,6 +282,9 @@ function MarketTile({
   const changeValue = change != null ? Number(change) : 0;
   const safeChangeValue = isNaN(changeValue) ? 0 : changeValue;
   const isPositive = safeChangeValue >= 0;
+  
+  // Check if this is an index (high value without currency)
+  const isIndex = numValue > 1000;
   
   return (
     <div className="p-4 rounded-lg bg-surface-800/50 border border-surface-700/50">
@@ -298,7 +297,10 @@ function MarketTile({
         )}
       </div>
       <p className="text-lg font-semibold text-surface-100">
-        {prefix}{numValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+        {isIndex 
+          ? numValue.toLocaleString('de-DE', { maximumFractionDigits: 0 })
+          : formatEUR(numValue)
+        }
       </p>
       {change != null && !isNaN(safeChangeValue) && (
         <p className={`text-sm ${isPositive ? 'text-success-400' : 'text-danger-400'}`}>

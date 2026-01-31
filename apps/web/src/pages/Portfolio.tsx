@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { Plus, Trash2, TrendingUp, TrendingDown } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, TrendingDown, BarChart2 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
-import { PriceChange, formatCurrency } from '../components/ui/PriceChange';
+import { PriceChange } from '../components/ui/PriceChange';
 import { SymbolSearch, SearchResult } from '../components/ui/SymbolSearch';
+import { SparklineChart } from '../components/ui/SparklineChart';
+import { PriceChart } from '../components/ui/PriceChart';
+import { formatEUR } from '../utils/currency';
 import { portfolioApi } from '../services/api';
 import type { Portfolio, PortfolioItem } from '../types';
 
@@ -17,6 +20,7 @@ function toNumber(value: unknown): number {
 
 export default function PortfolioPage() {
   const [showAddModal, setShowAddModal] = useState(false);
+  const [chartItem, setChartItem] = useState<{ symbol: string; name: string; avgCost?: number } | null>(null);
   const queryClient = useQueryClient();
   
   const { data: portfolio, isLoading } = useQuery<Portfolio>({
@@ -50,7 +54,7 @@ export default function PortfolioPage() {
           <CardContent>
             <p className="text-sm text-surface-500">Total Invested</p>
             <p className="text-2xl font-bold text-surface-100 mt-1">
-              {formatCurrency(summary?.totalInvested || 0)}
+              {formatEUR(summary?.totalInvested || 0)}
             </p>
           </CardContent>
         </Card>
@@ -58,7 +62,7 @@ export default function PortfolioPage() {
           <CardContent>
             <p className="text-sm text-surface-500">Current Value</p>
             <p className="text-2xl font-bold text-surface-100 mt-1">
-              {formatCurrency(summary?.currentValue || 0)}
+              {formatEUR(summary?.currentValue || 0)}
             </p>
           </CardContent>
         </Card>
@@ -68,7 +72,7 @@ export default function PortfolioPage() {
             <p className={`text-2xl font-bold mt-1 ${
               (summary?.profitLoss || 0) >= 0 ? 'text-success-400' : 'text-danger-400'
             }`}>
-              {formatCurrency(summary?.profitLoss || 0)}
+              {formatEUR(summary?.profitLoss || 0)}
             </p>
             <PriceChange 
               value={summary?.profitLoss || 0} 
@@ -121,10 +125,10 @@ export default function PortfolioPage() {
                 <thead>
                   <tr className="text-left text-sm text-surface-500 border-b border-surface-800">
                     <th className="pb-3 font-medium">Asset</th>
-                    <th className="pb-3 font-medium">Type</th>
-                    <th className="pb-3 font-medium">Quantity</th>
+                    <th className="pb-3 font-medium w-24">Trend</th>
+                    <th className="pb-3 font-medium">Qty</th>
                     <th className="pb-3 font-medium">Avg Cost</th>
-                    <th className="pb-3 font-medium">Current Price</th>
+                    <th className="pb-3 font-medium">Price</th>
                     <th className="pb-3 font-medium">Value</th>
                     <th className="pb-3 font-medium">Profit/Loss</th>
                     <th className="pb-3 font-medium"></th>
@@ -136,6 +140,11 @@ export default function PortfolioPage() {
                       key={item.id}
                       item={item}
                       onDelete={() => deleteMutation.mutate(item.id)}
+                      onShowChart={() => setChartItem({ 
+                        symbol: item.symbol, 
+                        name: item.assetName || '', 
+                        avgCost: toNumber(item.avgCost) 
+                      })}
                     />
                   ))}
                 </tbody>
@@ -149,16 +158,28 @@ export default function PortfolioPage() {
       {showAddModal && (
         <AddInvestmentModal onClose={() => setShowAddModal(false)} />
       )}
+
+      {/* Chart Modal */}
+      {chartItem && (
+        <PriceChart
+          symbol={chartItem.symbol}
+          name={chartItem.name}
+          buyPrice={chartItem.avgCost}
+          onClose={() => setChartItem(null)}
+        />
+      )}
     </div>
   );
 }
 
 function PortfolioRow({ 
   item, 
-  onDelete 
+  onDelete,
+  onShowChart
 }: { 
   item: PortfolioItem; 
   onDelete: () => void;
+  onShowChart: () => void;
 }) {
   const profitLoss = toNumber(item.profitLoss);
   const quantity = toNumber(item.quantity);
@@ -182,35 +203,51 @@ function PortfolioRow({
         </div>
       </td>
       <td className="py-4">
-        <Badge>{item.assetType}</Badge>
+        <div 
+          className="cursor-pointer hover:opacity-80 transition-opacity"
+          onClick={onShowChart}
+          title="Click to view full chart"
+        >
+          <SparklineChart symbol={item.symbol} range="1w" height={32} />
+        </div>
       </td>
-      <td className="py-4 font-mono text-surface-200">
-        {quantity.toLocaleString(undefined, { maximumFractionDigits: 8 })}
+      <td className="py-4 font-mono text-surface-200 text-sm">
+        {quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}
       </td>
-      <td className="py-4 font-mono text-surface-300">
-        {formatCurrency(item.avgCost)}
+      <td className="py-4 font-mono text-surface-300 text-sm">
+        {formatEUR(item.avgCost)}
       </td>
-      <td className="py-4 font-mono text-surface-200">
-        {formatCurrency(item.currentPrice)}
+      <td className="py-4 font-mono text-surface-200 text-sm">
+        {formatEUR(item.currentPrice)}
       </td>
-      <td className="py-4 font-mono text-surface-200">
-        {formatCurrency(item.currentValue)}
+      <td className="py-4 font-mono text-surface-200 text-sm">
+        {formatEUR(item.currentValue)}
       </td>
       <td className="py-4">
         <div>
-          <p className={`font-medium ${isPositive ? 'text-success-400' : 'text-danger-400'}`}>
-            {isPositive ? '+' : ''}{formatCurrency(profitLoss)}
+          <p className={`font-medium text-sm ${isPositive ? 'text-success-400' : 'text-danger-400'}`}>
+            {isPositive ? '+' : ''}{formatEUR(profitLoss)}
           </p>
           <PriceChange value={profitLoss} percentage={item.profitLossPct} size="sm" />
         </div>
       </td>
       <td className="py-4">
-        <button
-          onClick={onDelete}
-          className="p-2 rounded-lg hover:bg-surface-700 text-surface-500 hover:text-danger-400 transition-colors"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onShowChart}
+            className="p-2 rounded-lg hover:bg-surface-700 text-surface-400 hover:text-primary-400 transition-colors"
+            title="View Chart"
+          >
+            <BarChart2 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onDelete}
+            className="p-2 rounded-lg hover:bg-surface-700 text-surface-500 hover:text-danger-400 transition-colors"
+            title="Delete"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
       </td>
     </tr>
   );
