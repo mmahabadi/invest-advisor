@@ -2,8 +2,8 @@ import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import clsx from 'clsx';
 
 interface PriceChangeProps {
-  value: number;
-  percentage?: number;
+  value?: number | null;
+  percentage?: number | null;
   showIcon?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }
@@ -14,9 +14,12 @@ export function PriceChange({
   showIcon = true,
   size = 'md'
 }: PriceChangeProps) {
-  const isPositive = value > 0;
-  const isNegative = value < 0;
-  const isNeutral = value === 0;
+  const safeValue = value ?? 0;
+  const safePercentage = percentage ?? undefined;
+  
+  const isPositive = safeValue > 0;
+  const isNegative = safeValue < 0;
+  const isNeutral = safeValue === 0;
   
   const sizeClasses = {
     sm: 'text-xs',
@@ -45,30 +48,32 @@ export function PriceChange({
       {showIcon && <Icon className={iconSizes[size]} />}
       <span>
         {isPositive && '+'}
-        {percentage !== undefined ? `${percentage.toFixed(2)}%` : `$${Math.abs(value).toFixed(2)}`}
+        {safePercentage != null ? `${safePercentage.toFixed(2)}%` : `$${Math.abs(safeValue).toFixed(2)}`}
       </span>
     </span>
   );
 }
 
-export function formatCurrency(value: number, currency = 'USD'): string {
+export function formatCurrency(value?: number | null, currency = 'USD'): string {
+  const safeValue = value ?? 0;
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(value);
+  }).format(safeValue);
 }
 
-export function formatNumber(value: number, decimals = 2): string {
-  if (Math.abs(value) >= 1e9) {
-    return `${(value / 1e9).toFixed(1)}B`;
+export function formatNumber(value?: number | null, decimals = 2): string {
+  const safeValue = value ?? 0;
+  if (Math.abs(safeValue) >= 1e9) {
+    return `${(safeValue / 1e9).toFixed(1)}B`;
   }
-  if (Math.abs(value) >= 1e6) {
-    return `${(value / 1e6).toFixed(1)}M`;
+  if (Math.abs(safeValue) >= 1e6) {
+    return `${(safeValue / 1e6).toFixed(1)}M`;
   }
-  if (Math.abs(value) >= 1e3) {
-    return `${(value / 1e3).toFixed(1)}K`;
+  if (Math.abs(safeValue) >= 1e3) {
+    return `${(safeValue / 1e3).toFixed(1)}K`;
   }
-  return value.toFixed(decimals);
+  return safeValue.toFixed(decimals);
 }

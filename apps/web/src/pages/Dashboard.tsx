@@ -204,9 +204,9 @@ export default function Dashboard() {
                         : '—'}
                     </td>
                     <td className="py-4">
-                      {item.distanceToBuyPct !== null && (
+                      {item.distanceToBuyPct != null && (
                         <span className={item.distanceToBuyPct <= 5 ? 'text-success-400' : 'text-surface-400'}>
-                          {item.distanceToBuyPct > 0 ? '+' : ''}{item.distanceToBuyPct.toFixed(1)}%
+                          {item.distanceToBuyPct > 0 ? '+' : ''}{Number(item.distanceToBuyPct).toFixed(1)}%
                         </span>
                       )}
                     </td>
@@ -276,13 +276,14 @@ function MarketTile({
   prefix = '' 
 }: { 
   name: string; 
-  value?: number; 
-  change?: number;
+  value?: number | null; 
+  change?: number | null;
   prefix?: string;
 }) {
-  if (!value) return null;
+  if (value == null) return null;
   
-  const isPositive = (change || 0) >= 0;
+  const changeValue = change ?? 0;
+  const isPositive = changeValue >= 0;
   
   return (
     <div className="p-4 rounded-lg bg-surface-800/50 border border-surface-700/50">
@@ -297,9 +298,9 @@ function MarketTile({
       <p className="text-lg font-semibold text-surface-100">
         {prefix}{value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
       </p>
-      {change !== undefined && (
+      {change != null && (
         <p className={`text-sm ${isPositive ? 'text-success-400' : 'text-danger-400'}`}>
-          {isPositive ? '+' : ''}{change.toFixed(2)}%
+          {isPositive ? '+' : ''}{changeValue.toFixed(2)}%
         </p>
       )}
     </div>
