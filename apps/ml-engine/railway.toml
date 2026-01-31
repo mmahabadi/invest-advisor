@@ -1,8 +1,10 @@
 [build]
 builder = "dockerfile"
 dockerfilePath = "Dockerfile"
+watchPatterns = ["apps/ml-engine/**"]
 
 [deploy]
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port 8000"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 numReplicas = 1

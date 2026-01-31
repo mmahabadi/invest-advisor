@@ -1,6 +1,7 @@
 [build]
 builder = "dockerfile"
 dockerfilePath = "Dockerfile"
+watchPatterns = ["apps/web/**"]
 
 [deploy]
 startCommand = "nginx -g 'daemon off;'"
