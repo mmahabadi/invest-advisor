@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, Inject } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, Inject, Logger, InternalServerErrorException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -9,6 +9,8 @@ import { RegisterDto, LoginDto, GoogleAuthDto } from './dto/auth.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
@@ -70,45 +72,60 @@ export class AuthService {
   }
 
   async googleAuth(dto: GoogleAuthDto) {
-    // In production, verify the Google token
-    // For now, we'll trust the credential and extract user info
-    // You should use google-auth-library to verify the token
+    this.logger.log(`Google auth attempt for email: ${dto.email}`);
     
-    if (!dto.googleId || !dto.email || !dto.name) {
-      throw new UnauthorizedException('Invalid Google auth data');
-    }
-    
-    let user = await this.usersService.findByGoogleId(dto.googleId);
-    
-    if (!user) {
-      // Check if email already exists
-      user = await this.usersService.findByEmail(dto.email);
-      
-      if (user) {
-        // Link Google account to existing user
-        await this.usersService.update(user.id, { googleId: dto.googleId });
-      } else {
-        // Create new user
-        user = await this.usersService.create({
-          email: dto.email,
-          name: dto.name,
-          googleId: dto.googleId,
-          avatarUrl: dto.avatarUrl,
-          emailVerified: true,
-        });
+    try {
+      // Validate required fields
+      if (!dto.googleId || !dto.email || !dto.name) {
+        this.logger.warn('Missing required Google auth fields');
+        throw new UnauthorizedException('Invalid Google auth data');
       }
+      
+      this.logger.log(`Looking up user by googleId: ${dto.googleId}`);
+      let user = await this.usersService.findByGoogleId(dto.googleId);
+      
+      if (!user) {
+        this.logger.log(`No user found by googleId, checking email: ${dto.email}`);
+        // Check if email already exists
+        user = await this.usersService.findByEmail(dto.email);
+        
+        if (user) {
+          // Link Google account to existing user
+          this.logger.log(`Linking Google account to existing user: ${user.id}`);
+          await this.usersService.update(user.id, { googleId: dto.googleId });
+        } else {
+          // Create new user
+          this.logger.log(`Creating new user for: ${dto.email}`);
+          user = await this.usersService.create({
+            email: dto.email,
+            name: dto.name,
+            googleId: dto.googleId,
+            avatarUrl: dto.avatarUrl,
+            emailVerified: true,
+          });
+          this.logger.log(`Created new user: ${user.id}`);
+        }
+      }
+
+      this.logger.log(`Generating tokens for user: ${user.id}`);
+      const tokens = await this.generateTokens(user.id);
+
+      this.logger.log(`Google auth successful for user: ${user.id}`);
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+        },
+        ...tokens,
+      };
+    } catch (error) {
+      this.logger.error(`Google auth failed: ${error.message}`, error.stack);
+      if (error instanceof UnauthorizedException || error instanceof ConflictException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(`Authentication failed: ${error.message}`);
     }
-
-    const tokens = await this.generateTokens(user.id);
-
-    return {
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-      },
-      ...tokens,
-    };
   }
 
   async refreshToken(refreshToken: string) {
