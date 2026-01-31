@@ -4,7 +4,7 @@ dockerfilePath = "Dockerfile"
 watchPatterns = ["apps/backend/**"]
 
 [deploy]
-startCommand = "node dist/main.js"
+startCommand = "/app/start.sh"
 healthcheckPath = "/api/v1/health"
 healthcheckTimeout = 300
 numReplicas = 1
