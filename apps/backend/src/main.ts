@@ -16,7 +16,14 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1');
 
   // CORS - configure based on environment
-  const allowedOrigins = [frontendUrl];
+  const allowedOrigins = [
+    frontendUrl,
+    // Custom domain
+    'https://spend-buddy.com',
+    'https://www.spend-buddy.com',
+    'http://spend-buddy.com',
+    'http://www.spend-buddy.com',
+  ];
   
   // In development, also allow localhost
   if (nodeEnv === 'development') {
@@ -30,8 +37,15 @@ async function bootstrap() {
         return callback(null, true);
       }
       
-      // Check if origin is allowed
-      if (allowedOrigins.some(allowed => origin.startsWith(allowed) || origin.includes('.railway.app'))) {
+      // Check if origin is allowed (exact match, startsWith, or Railway domains)
+      const isAllowed = allowedOrigins.some(allowed => 
+        origin === allowed || 
+        origin.startsWith(allowed) || 
+        origin.includes('.railway.app') ||
+        origin.includes('spend-buddy.com')
+      );
+      
+      if (isAllowed) {
         return callback(null, true);
       }
       
