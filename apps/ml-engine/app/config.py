@@ -1,14 +1,15 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+import os
 
 
 class Settings(BaseSettings):
     """Application settings"""
     
-    # API
+    # API - PORT is set by Railway
     API_HOST: str = "0.0.0.0"
-    API_PORT: int = 8000
-    DEBUG: bool = True
+    API_PORT: int = int(os.environ.get("PORT", 8000))
+    DEBUG: bool = False
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
