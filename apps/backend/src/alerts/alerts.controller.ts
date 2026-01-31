@@ -52,6 +52,9 @@ export class AlertsController {
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
   ) {
+    // #region agent log
+    console.log('[DEBUG] getHistory called:', { userId: req.user?.id, limit, offset, limitType: typeof limit, offsetType: typeof offset });
+    // #endregion
     return this.alertsService.getAlertHistory(req.user.id, limit, offset);
   }
 

@@ -128,33 +128,55 @@ export class AlertsService {
   }
 
   async getAlertHistory(userId: string, limit: number = 50, offset: number = 0) {
-    const result = await this.db.query(
-      `SELECT * FROM alert_history 
-       WHERE user_id = $1 
-       ORDER BY triggered_at DESC 
-       LIMIT $2 OFFSET $3`,
-      [userId, limit, offset],
-    );
+    // #region agent log
+    console.log('[DEBUG] getAlertHistory entry:', { userId, limit, offset, limitParsed: Number(limit), offsetParsed: Number(offset) });
+    // #endregion
+    
+    try {
+      const safeLimit = Number(limit) || 50;
+      const safeOffset = Number(offset) || 0;
+      
+      // #region agent log
+      console.log('[DEBUG] About to execute query:', { userId, safeLimit, safeOffset });
+      // #endregion
+      
+      const result = await this.db.query(
+        `SELECT * FROM alert_history 
+         WHERE user_id = $1 
+         ORDER BY triggered_at DESC 
+         LIMIT $2 OFFSET $3`,
+        [userId, safeLimit, safeOffset],
+      );
 
-    const countResult = await this.db.query(
-      `SELECT COUNT(*) FROM alert_history WHERE user_id = $1`,
-      [userId],
-    );
+      // #region agent log
+      console.log('[DEBUG] Query executed:', { rowCount: result.rows.length, firstRow: result.rows[0] });
+      // #endregion
 
-    return {
-      history: result.rows.map((h) => ({
-        id: h.id,
-        symbol: h.symbol,
-        alertType: h.alert_type,
-        triggeredAt: h.triggered_at,
-        priceAtTrigger: Number(h.price_at_trigger),
-        targetPrice: h.target_price ? Number(h.target_price) : null,
-        emailSent: h.email_sent,
-        acknowledged: h.acknowledged,
-        actionTaken: h.action_taken,
-      })),
-      total: parseInt(countResult.rows[0].count, 10),
-    };
+      const countResult = await this.db.query(
+        `SELECT COUNT(*) FROM alert_history WHERE user_id = $1`,
+        [userId],
+      );
+
+      return {
+        history: result.rows.map((h) => ({
+          id: h.id,
+          symbol: h.symbol,
+          alertType: h.alert_type,
+          triggeredAt: h.triggered_at,
+          priceAtTrigger: Number(h.price_at_trigger),
+          targetPrice: h.target_price ? Number(h.target_price) : null,
+          emailSent: h.email_sent,
+          acknowledged: h.acknowledged,
+          actionTaken: h.action_taken,
+        })),
+        total: parseInt(countResult.rows[0].count, 10),
+      };
+    } catch (error) {
+      // #region agent log
+      console.error('[DEBUG] Query failed:', { error: error.message, stack: error.stack });
+      // #endregion
+      throw error;
+    }
   }
 
   async acknowledgeAlert(userId: string, historyId: string, actionTaken?: string) {
