@@ -15,12 +15,15 @@ export function SparklineChart({
   className = '',
   height = 40 
 }: SparklineChartProps) {
-  const { data, isLoading, error } = useQuery({
+  const { data: response, isLoading, error } = useQuery<{ data: Array<{ close: number; timestamp: string }> }>({
     queryKey: ['sparkline', symbol, range],
     queryFn: () => marketApi.getHistory(symbol, range),
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: 1,
   });
+
+  // Extract the data array from the response
+  const data = response?.data || [];
 
   if (isLoading) {
     return (
@@ -30,7 +33,7 @@ export function SparklineChart({
     );
   }
 
-  if (error || !data?.length) {
+  if (error || !data.length) {
     return (
       <div className={`flex items-center justify-center text-surface-600 text-xs ${className}`} style={{ height }}>
         —
@@ -39,13 +42,13 @@ export function SparklineChart({
   }
 
   // Calculate trend color
-  const prices = data.map((d: { close: number }) => d.close).filter(Boolean);
+  const prices = data.map((d) => d.close).filter(Boolean);
   const firstPrice = prices[0] || 0;
   const lastPrice = prices[prices.length - 1] || 0;
   const isPositive = lastPrice >= firstPrice;
 
   // Prepare chart data
-  const chartData = data.map((d: { timestamp: string; close: number }) => ({
+  const chartData = data.map((d) => ({
     value: d.close,
   }));
 

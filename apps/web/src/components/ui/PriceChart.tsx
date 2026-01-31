@@ -30,28 +30,37 @@ const TIME_RANGES = [
 
 type TimeRange = typeof TIME_RANGES[number]['key'];
 
+interface HistoryResponse {
+  symbol: string;
+  range: string;
+  data: Array<{ timestamp: string; close: number; volume: number }>;
+}
+
 export function PriceChart({ symbol, name, onClose, buyPrice }: PriceChartProps) {
   const [range, setRange] = useState<TimeRange>('1m');
 
-  const { data, isLoading, error } = useQuery({
+  const { data: response, isLoading, error } = useQuery<HistoryResponse>({
     queryKey: ['priceChart', symbol, range],
     queryFn: () => marketApi.getHistory(symbol, range),
     staleTime: 2 * 60 * 1000, // 2 minutes
   });
 
+  // Extract the data array from the response
+  const historyData = response?.data || [];
+
   // Calculate stats
-  const prices = data?.map((d: { close: number }) => d.close).filter(Boolean) || [];
+  const prices = historyData.map((d) => d.close).filter(Boolean);
   const currentPrice = prices[prices.length - 1] || 0;
   const startPrice = prices[0] || 0;
   const change = currentPrice - startPrice;
   const changePct = startPrice ? ((change / startPrice) * 100) : 0;
   const isPositive = change >= 0;
 
-  const minPrice = Math.min(...prices);
-  const maxPrice = Math.max(...prices);
+  const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+  const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
 
   // Format data for chart
-  const chartData = data?.map((d: { timestamp: string; close: number; volume: number }) => ({
+  const chartData = historyData.map((d) => ({
     date: new Date(d.timestamp).toLocaleDateString('de-DE', {
       month: 'short',
       day: 'numeric',
@@ -62,7 +71,7 @@ export function PriceChart({ symbol, name, onClose, buyPrice }: PriceChartProps)
     }),
     price: d.close,
     volume: d.volume,
-  })) || [];
+  }));
 
   const strokeColor = isPositive ? '#22c55e' : '#ef4444';
 
@@ -141,7 +150,7 @@ export function PriceChart({ symbol, name, onClose, buyPrice }: PriceChartProps)
             <div className="flex items-center justify-center h-full">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500" />
             </div>
-          ) : error || !data?.length ? (
+          ) : error || !historyData.length ? (
             <div className="flex items-center justify-center h-full text-surface-500">
               No chart data available
             </div>
