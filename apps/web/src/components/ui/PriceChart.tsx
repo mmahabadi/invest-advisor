@@ -11,7 +11,7 @@ import {
 } from 'recharts';
 import { X, TrendingUp, TrendingDown } from 'lucide-react';
 import { marketApi } from '../../services/api';
-import { formatEUR } from '../../utils/currency';
+import { formatPriceEUR } from '../../utils/currency';
 
 interface PriceChartProps {
   symbol: string;
@@ -103,25 +103,25 @@ export function PriceChart({ symbol, name, onClose, buyPrice }: PriceChartProps)
         <div className="px-4 py-3 flex items-center gap-6 border-b border-surface-800">
           <div>
             <p className="text-2xl font-bold text-surface-100 font-mono">
-              {formatEUR(currentPrice)}
+              {formatPriceEUR(currentPrice, symbol)}
             </p>
             <p className={`text-sm ${isPositive ? 'text-success-400' : 'text-danger-400'}`}>
-              {isPositive ? '+' : ''}{formatEUR(change)} ({changePct.toFixed(2)}%)
+              {isPositive ? '+' : ''}{formatPriceEUR(change, symbol)} ({changePct.toFixed(2)}%)
             </p>
           </div>
           <div className="flex gap-4 text-sm">
             <div>
               <p className="text-surface-500">High</p>
-              <p className="text-surface-200 font-mono">{formatEUR(maxPrice)}</p>
+              <p className="text-surface-200 font-mono">{formatPriceEUR(maxPrice, symbol)}</p>
             </div>
             <div>
               <p className="text-surface-500">Low</p>
-              <p className="text-surface-200 font-mono">{formatEUR(minPrice)}</p>
+              <p className="text-surface-200 font-mono">{formatPriceEUR(minPrice, symbol)}</p>
             </div>
             {buyPrice && (
               <div>
                 <p className="text-surface-500">Your Avg Cost</p>
-                <p className="text-primary-400 font-mono">{formatEUR(buyPrice)}</p>
+                <p className="text-primary-400 font-mono">{formatPriceEUR(buyPrice, symbol)}</p>
               </div>
             )}
           </div>
@@ -191,7 +191,7 @@ export function PriceChart({ symbol, name, onClose, buyPrice }: PriceChartProps)
                     fontSize: '12px',
                   }}
                   labelStyle={{ color: '#9ca3af' }}
-                  formatter={(value: number) => [formatEUR(value), 'Price']}
+                  formatter={(value: number) => [formatPriceEUR(value, symbol), 'Price']}
                 />
                 {/* Buy price reference line */}
                 {buyPrice && (

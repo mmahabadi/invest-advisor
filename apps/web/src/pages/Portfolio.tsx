@@ -6,7 +6,7 @@ import { PriceChange } from '../components/ui/PriceChange';
 import { SymbolSearch, SearchResult } from '../components/ui/SymbolSearch';
 import { SparklineChart } from '../components/ui/SparklineChart';
 import { PriceChart } from '../components/ui/PriceChart';
-import { formatEUR } from '../utils/currency';
+import { formatPriceEUR, formatEUR, convertToEUR } from '../utils/currency';
 import { portfolioApi } from '../services/api';
 import type { Portfolio, PortfolioItem } from '../types';
 
@@ -214,18 +214,18 @@ function PortfolioRow({
         {quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}
       </td>
       <td className="py-4 font-mono text-surface-300 text-sm">
-        {formatEUR(item.avgCost)}
+        {formatPriceEUR(item.avgCost, item.symbol)}
       </td>
       <td className="py-4 font-mono text-surface-200 text-sm">
-        {formatEUR(item.currentPrice)}
+        {formatPriceEUR(item.currentPrice, item.symbol)}
       </td>
       <td className="py-4 font-mono text-surface-200 text-sm">
-        {formatEUR(item.currentValue)}
+        {formatPriceEUR(item.currentValue, item.symbol)}
       </td>
       <td className="py-4">
         <div>
           <p className={`font-medium text-sm ${isPositive ? 'text-success-400' : 'text-danger-400'}`}>
-            {isPositive ? '+' : ''}{formatEUR(profitLoss)}
+            {isPositive ? '+' : ''}{formatPriceEUR(profitLoss, item.symbol)}
           </p>
           <PriceChange value={profitLoss} percentage={item.profitLossPct} size="sm" />
         </div>

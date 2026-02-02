@@ -7,7 +7,7 @@ import { Badge, RecommendationBadge, ConfidenceBadge } from '../components/ui/Ba
 import { PriceChange } from '../components/ui/PriceChange';
 import { SparklineChart } from '../components/ui/SparklineChart';
 import { PriceChart } from '../components/ui/PriceChart';
-import { formatEUR } from '../utils/currency';
+import { formatPriceEUR } from '../utils/currency';
 import { watchlistApi } from '../services/api';
 import type { WatchlistItem } from '../types';
 
@@ -198,7 +198,7 @@ function WatchlistCard({
           <div>
             <p className="text-xs text-surface-500 mb-1">Current Price</p>
             <p className="text-lg font-mono font-semibold text-surface-100">
-              {formatEUR(item.currentPrice)}
+              {formatPriceEUR(item.currentPrice, item.symbol)}
             </p>
             <PriceChange 
               value={item.priceChange24h} 
@@ -209,7 +209,7 @@ function WatchlistCard({
           <div>
             <p className="text-xs text-surface-500 mb-1">Buy Target</p>
             <p className="text-lg font-mono font-semibold text-success-400">
-              {target?.buyTarget ? formatEUR(target.buyTarget) : '—'}
+              {target?.buyTarget ? formatPriceEUR(target.buyTarget, item.symbol) : '—'}
             </p>
             {item.distanceToBuyPct != null && (
               <p className="text-xs text-surface-500">
@@ -220,7 +220,7 @@ function WatchlistCard({
           <div>
             <p className="text-xs text-surface-500 mb-1">Sell Target</p>
             <p className="text-lg font-mono font-semibold text-primary-400">
-              {target?.sellTarget ? formatEUR(target.sellTarget) : '—'}
+              {target?.sellTarget ? formatPriceEUR(target.sellTarget, item.symbol) : '—'}
             </p>
           </div>
         </div>

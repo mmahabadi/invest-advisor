@@ -12,7 +12,7 @@ import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Badge, RecommendationBadge, ConfidenceBadge } from '../components/ui/Badge';
 import { PriceChange } from '../components/ui/PriceChange';
-import { formatEUR } from '../utils/currency';
+import { formatPriceEUR, formatEUR } from '../utils/currency';
 import { portfolioApi, watchlistApi, marketApi } from '../services/api';
 import type { Portfolio, WatchlistItem, MarketOverview } from '../types';
 
@@ -142,7 +142,7 @@ export default function Dashboard() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-surface-100">{item.symbol}</p>
-                    <p className="text-xs text-surface-500">{formatEUR(item.currentValue)}</p>
+                    <p className="text-xs text-surface-500">{formatPriceEUR(item.currentValue, item.symbol)}</p>
                   </div>
                 </div>
                 <PriceChange value={item.profitLoss} percentage={item.profitLossPct} size="sm" />
@@ -192,13 +192,13 @@ export default function Dashboard() {
                     </td>
                     <td className="py-4">
                       <p className="font-mono text-surface-200">
-                        {formatEUR(item.currentPrice)}
+                        {formatPriceEUR(item.currentPrice, item.symbol)}
                       </p>
                       <PriceChange value={item.priceChange24h} percentage={item.priceChangePct24h} size="sm" />
                     </td>
                     <td className="py-4 font-mono text-surface-300">
                       {item.targetPrice?.buyTarget 
-                        ? formatEUR(item.targetPrice.buyTarget)
+                        ? formatPriceEUR(item.targetPrice.buyTarget, item.symbol)
                         : '—'}
                     </td>
                     <td className="py-4">
