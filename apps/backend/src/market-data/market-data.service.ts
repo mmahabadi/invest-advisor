@@ -101,7 +101,7 @@ export class MarketDataService {
   ) {
     this.finnhubApiKey = this.configService.get<string>('FINNHUB_API_KEY') || '';
     if (!this.finnhubApiKey) {
-      this.logger.warn('FINNHUB_API_KEY not configured - falling back to Yahoo Finance');
+      this.logger.error('FINNHUB_API_KEY not configured - market data will not be available!');
     } else {
       this.logger.log('Finnhub API configured successfully');
     }
@@ -116,31 +116,16 @@ export class MarketDataService {
     }
 
     try {
-      let data: QuoteData;
-      let dataSource = 'unknown';
-      
-      // Try Finnhub first if API key is configured
-      if (this.finnhubApiKey) {
-        try {
-          data = await this.fetchFinnhubQuote(symbol);
-          dataSource = 'finnhub';
-          this.logger.log(`Finnhub quote for ${symbol}: $${data.price} (${dataSource})`);
-        } catch (finnhubError) {
-          this.logger.warn(`Finnhub failed for ${symbol}: ${finnhubError.message}, trying Yahoo Finance`);
-          data = await this.fetchYahooQuote(symbol);
-          dataSource = 'yahoo';
-          this.logger.log(`Yahoo quote for ${symbol}: $${data.price} (${dataSource})`);
-        }
-      } else {
-        // Fallback to Yahoo Finance
-        data = await this.fetchYahooQuote(symbol);
-        dataSource = 'yahoo';
-        this.logger.log(`Yahoo quote for ${symbol}: $${data.price} (no Finnhub key)`);
+      if (!this.finnhubApiKey) {
+        throw new Error('FINNHUB_API_KEY not configured');
       }
+      
+      const data = await this.fetchFinnhubQuote(symbol);
+      this.logger.log(`Finnhub quote for ${symbol}: $${data.price}`);
       
       // Add metadata
       data.lastUpdated = new Date().toISOString();
-      data.dataSource = dataSource;
+      data.dataSource = 'finnhub';
       
       // Cache for 30 seconds (shorter for more frequent updates)
       this.setCache(cacheKey, data, 30 * 1000);
@@ -191,20 +176,11 @@ export class MarketDataService {
     if (cached) return cached;
 
     try {
-      let data: HistoricalData[];
-      
-      // Try Finnhub first if API key is configured
-      if (this.finnhubApiKey) {
-        try {
-          data = await this.fetchFinnhubHistory(symbol, range);
-        } catch (finnhubError) {
-          this.logger.warn(`Finnhub history failed for ${symbol}, trying Yahoo Finance`, finnhubError);
-          data = await this.fetchYahooHistory(symbol, range);
-        }
-      } else {
-        data = await this.fetchYahooHistory(symbol, range);
+      if (!this.finnhubApiKey) {
+        throw new Error('FINNHUB_API_KEY not configured');
       }
       
+      const data = await this.fetchFinnhubHistory(symbol, range);
       this.setCache(cacheKey, data, 5 * 60 * 1000); // Cache for 5 minutes
       return data;
     } catch (error) {
@@ -259,8 +235,8 @@ export class MarketDataService {
             const figiResults = figiResponse.data[0].data;
             for (const item of figiResults.slice(0, 5)) {
               if (item.ticker) {
-                // Map exchange to Yahoo Finance suffix
-                const suffix = this.getYahooSuffix(item.exchCode);
+                // Map exchange code to symbol suffix
+                const suffix = this.getExchangeSuffix(item.exchCode);
                 const symbol = suffix ? `${item.ticker}${suffix}` : item.ticker;
                 if (!results.find(r => r.symbol === symbol)) {
                   results.push({
@@ -278,48 +254,14 @@ export class MarketDataService {
         }
       }
       
-      // Try Finnhub search first if API key is configured
+      // Use Finnhub search
       if (this.finnhubApiKey) {
         const finnhubResults = await this.searchWithFinnhub(query);
         for (const result of finnhubResults) {
           if (!results.find(r => r.symbol === result.symbol)) {
-            results.push({ ...result, exchange: 'US' });
+            results.push({ ...result, exchange: result.exchange || 'US' });
           }
         }
-      }
-      
-      // Also try Yahoo Finance search for broader coverage
-      try {
-        const response = await axios.get(
-          `https://query1.finance.yahoo.com/v1/finance/search`,
-          {
-            params: {
-              q: query,
-              quotesCount: 15,
-              newsCount: 0,
-            },
-            headers: {
-              'User-Agent': 'Mozilla/5.0',
-            },
-            timeout: 5000,
-          },
-        );
-
-        const yahooResults = response.data.quotes.map((q: any) => ({
-          symbol: q.symbol,
-          name: q.shortname || q.longname || q.symbol,
-          type: this.mapExchangeToType(q.exchange),
-          exchange: q.exchange,
-        }));
-        
-        // Add Yahoo results, avoiding duplicates
-        for (const result of yahooResults) {
-          if (!results.find(r => r.symbol === result.symbol)) {
-            results.push(result);
-          }
-        }
-      } catch (yahooError) {
-        this.logger.warn('Yahoo search failed', yahooError);
       }
       
       // Extract base ticker (remove exchange suffix if present)
@@ -388,7 +330,7 @@ export class MarketDataService {
     }
   }
   
-  private getYahooSuffix(exchCode: string): string {
+  private getExchangeSuffix(exchCode: string): string {
     const exchangeMap: Record<string, string> = {
       'LN': '.L',      // London
       'GY': '.DE',     // Germany (Xetra)
@@ -469,76 +411,6 @@ export class MarketDataService {
       marketStatus: this.getMarketStatus(),
       lastUpdated: new Date().toISOString(),
     };
-  }
-
-  private async fetchYahooQuote(symbol: string): Promise<QuoteData> {
-    const response = await axios.get(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`,
-      {
-        params: {
-          interval: '1d',
-          range: '1d',
-        },
-        headers: {
-          'User-Agent': 'Mozilla/5.0',
-        },
-        timeout: 10000,
-      },
-    );
-
-    const result = response.data.chart.result[0];
-    const meta = result.meta;
-    const quote = result.indicators.quote[0];
-
-    return {
-      symbol: meta.symbol,
-      name: meta.shortName || meta.symbol,
-      price: meta.regularMarketPrice,
-      change: meta.regularMarketPrice - meta.previousClose,
-      changePct: ((meta.regularMarketPrice - meta.previousClose) / meta.previousClose) * 100,
-      open: quote.open?.[quote.open.length - 1] || meta.regularMarketPrice,
-      high: quote.high?.[quote.high.length - 1] || meta.regularMarketPrice,
-      low: quote.low?.[quote.low.length - 1] || meta.regularMarketPrice,
-      volume: quote.volume?.[quote.volume.length - 1] || 0,
-      marketCap: meta.marketCap,
-    };
-  }
-
-  private async fetchYahooHistory(symbol: string, range: string): Promise<HistoricalData[]> {
-    const rangeMap: Record<string, { range: string; interval: string }> = {
-      '1d': { range: '1d', interval: '5m' },
-      '1w': { range: '5d', interval: '15m' },
-      '1m': { range: '1mo', interval: '1d' },
-      '3m': { range: '3mo', interval: '1d' },
-      '1y': { range: '1y', interval: '1d' },
-      '5y': { range: '5y', interval: '1wk' },
-    };
-
-    const config = rangeMap[range] || rangeMap['1m'];
-
-    const response = await axios.get(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`,
-      {
-        params: config,
-        headers: {
-          'User-Agent': 'Mozilla/5.0',
-        },
-        timeout: 10000,
-      },
-    );
-
-    const result = response.data.chart.result[0];
-    const timestamps = result.timestamp || [];
-    const quote = result.indicators.quote[0];
-
-    return timestamps.map((ts: number, i: number) => ({
-      timestamp: new Date(ts * 1000).toISOString(),
-      open: quote.open?.[i] || 0,
-      high: quote.high?.[i] || 0,
-      low: quote.low?.[i] || 0,
-      close: quote.close?.[i] || 0,
-      volume: quote.volume?.[i] || 0,
-    }));
   }
 
   // ==================== FINNHUB API METHODS ====================
@@ -766,7 +638,7 @@ export class MarketDataService {
   /**
    * Search symbols using Finnhub
    */
-  async searchWithFinnhub(query: string): Promise<Array<{ symbol: string; name: string; type: string }>> {
+  async searchWithFinnhub(query: string): Promise<Array<{ symbol: string; name: string; type: string; exchange: string }>> {
     if (!this.finnhubApiKey) return [];
     
     try {
@@ -780,6 +652,7 @@ export class MarketDataService {
           symbol: item.symbol,
           name: item.description,
           type: item.type || 'stock',
+          exchange: item.exchange || 'US',
         }));
       }
     } catch (error) {
