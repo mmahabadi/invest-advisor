@@ -90,24 +90,19 @@ const US_TO_GERMAN_TICKERS: Record<string, string> = {
 export class MarketDataService {
   private readonly logger = new Logger(MarketDataService.name);
   private readonly cache = new Map<string, { data: any; expiry: number }>();
-  private readonly tiingoApiKey: string;
-  private readonly tiingoBaseUrl = 'https://api.tiingo.com';
+  private readonly finnhubApiKey: string;
+  private readonly finnhubBaseUrl = 'https://finnhub.io/api/v1';
 
   constructor(
     private configService: ConfigService,
     @Inject('DatabaseService') private db: DatabaseService,
   ) {
-    this.tiingoApiKey = this.configService.get<string>('TIINGO_API_KEY') || '';
-    if (!this.tiingoApiKey) {
-      this.logger.warn('TIINGO_API_KEY not configured - falling back to Yahoo Finance');
+    this.finnhubApiKey = this.configService.get<string>('FINNHUB_API_KEY') || '';
+    if (!this.finnhubApiKey) {
+      this.logger.warn('FINNHUB_API_KEY not configured - falling back to Yahoo Finance');
+    } else {
+      this.logger.log('Finnhub API configured successfully');
     }
-  }
-
-  private getTiingoHeaders() {
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': `Token ${this.tiingoApiKey}`,
-    };
   }
 
   async getQuote(symbol: string): Promise<QuoteData> {
@@ -118,12 +113,12 @@ export class MarketDataService {
     try {
       let data: QuoteData;
       
-      // Try Tiingo first if API key is configured
-      if (this.tiingoApiKey) {
+      // Try Finnhub first if API key is configured
+      if (this.finnhubApiKey) {
         try {
-          data = await this.fetchTiingoQuote(symbol);
-        } catch (tiingoError) {
-          this.logger.warn(`Tiingo failed for ${symbol}, trying Yahoo Finance`, tiingoError);
+          data = await this.fetchFinnhubQuote(symbol);
+        } catch (finnhubError) {
+          this.logger.warn(`Finnhub failed for ${symbol}, trying Yahoo Finance`, finnhubError);
           data = await this.fetchYahooQuote(symbol);
         }
       } else {
@@ -176,12 +171,12 @@ export class MarketDataService {
     try {
       let data: HistoricalData[];
       
-      // Try Tiingo first if API key is configured
-      if (this.tiingoApiKey) {
+      // Try Finnhub first if API key is configured
+      if (this.finnhubApiKey) {
         try {
-          data = await this.fetchTiingoHistory(symbol, range);
-        } catch (tiingoError) {
-          this.logger.warn(`Tiingo history failed for ${symbol}, trying Yahoo Finance`, tiingoError);
+          data = await this.fetchFinnhubHistory(symbol, range);
+        } catch (finnhubError) {
+          this.logger.warn(`Finnhub history failed for ${symbol}, trying Yahoo Finance`, finnhubError);
           data = await this.fetchYahooHistory(symbol, range);
         }
       } else {
@@ -261,34 +256,48 @@ export class MarketDataService {
         }
       }
       
-      // Try Yahoo Finance search
-      const response = await axios.get(
-        `https://query1.finance.yahoo.com/v1/finance/search`,
-        {
-          params: {
-            q: query,
-            quotesCount: 15,
-            newsCount: 0,
-          },
-          headers: {
-            'User-Agent': 'Mozilla/5.0',
-          },
-          timeout: 5000,
-        },
-      );
-
-      const yahooResults = response.data.quotes.map((q: any) => ({
-        symbol: q.symbol,
-        name: q.shortname || q.longname || q.symbol,
-        type: this.mapExchangeToType(q.exchange),
-        exchange: q.exchange,
-      }));
-      
-      // Add Yahoo results, avoiding duplicates
-      for (const result of yahooResults) {
-        if (!results.find(r => r.symbol === result.symbol)) {
-          results.push(result);
+      // Try Finnhub search first if API key is configured
+      if (this.finnhubApiKey) {
+        const finnhubResults = await this.searchWithFinnhub(query);
+        for (const result of finnhubResults) {
+          if (!results.find(r => r.symbol === result.symbol)) {
+            results.push({ ...result, exchange: 'US' });
+          }
         }
+      }
+      
+      // Also try Yahoo Finance search for broader coverage
+      try {
+        const response = await axios.get(
+          `https://query1.finance.yahoo.com/v1/finance/search`,
+          {
+            params: {
+              q: query,
+              quotesCount: 15,
+              newsCount: 0,
+            },
+            headers: {
+              'User-Agent': 'Mozilla/5.0',
+            },
+            timeout: 5000,
+          },
+        );
+
+        const yahooResults = response.data.quotes.map((q: any) => ({
+          symbol: q.symbol,
+          name: q.shortname || q.longname || q.symbol,
+          type: this.mapExchangeToType(q.exchange),
+          exchange: q.exchange,
+        }));
+        
+        // Add Yahoo results, avoiding duplicates
+        for (const result of yahooResults) {
+          if (!results.find(r => r.symbol === result.symbol)) {
+            results.push(result);
+          }
+        }
+      } catch (yahooError) {
+        this.logger.warn('Yahoo search failed', yahooError);
       }
       
       // Extract base ticker (remove exchange suffix if present)
@@ -510,259 +519,269 @@ export class MarketDataService {
     }));
   }
 
-  // ==================== TIINGO API METHODS ====================
+  // ==================== FINNHUB API METHODS ====================
+  // Documentation: https://finnhub.io/docs/api
 
   /**
-   * Fetch real-time quote from Tiingo IEX or end-of-day API
+   * Fetch real-time quote from Finnhub
    */
-  private async fetchTiingoQuote(symbol: string): Promise<QuoteData> {
-    // Clean symbol for Tiingo (remove exchange suffix for US stocks)
-    const tiingoSymbol = this.getTiingoSymbol(symbol);
+  private async fetchFinnhubQuote(symbol: string): Promise<QuoteData> {
+    // Clean symbol for Finnhub
+    const finnhubSymbol = this.getFinnhubSymbol(symbol);
     
     // Check if it's crypto
     if (this.detectAssetType(symbol) === 'crypto') {
-      return this.fetchTiingoCryptoQuote(symbol);
+      return this.fetchFinnhubCryptoQuote(symbol);
     }
     
-    // Try IEX real-time first (US stocks only)
-    try {
-      const response = await axios.get(
-        `${this.tiingoBaseUrl}/iex/${tiingoSymbol}`,
-        {
-          headers: this.getTiingoHeaders(),
-          timeout: 10000,
-        },
-      );
-      
-      if (response.data && response.data.length > 0) {
-        const data = response.data[0];
-        return {
-          symbol: symbol,
-          name: tiingoSymbol,
-          price: data.last || data.tngoLast || 0,
-          change: (data.last || 0) - (data.prevClose || 0),
-          changePct: data.prevClose ? (((data.last || 0) - data.prevClose) / data.prevClose) * 100 : 0,
-          open: data.open || 0,
-          high: data.high || 0,
-          low: data.low || 0,
-          volume: data.volume || 0,
-        };
-      }
-    } catch (iexError) {
-      this.logger.debug(`IEX not available for ${symbol}, trying end-of-day`);
-    }
-    
-    // Fallback to end-of-day data
-    const response = await axios.get(
-      `${this.tiingoBaseUrl}/tiingo/daily/${tiingoSymbol}/prices`,
-      {
-        headers: this.getTiingoHeaders(),
+    // Fetch quote data
+    const [quoteResponse, profileResponse] = await Promise.all([
+      axios.get(`${this.finnhubBaseUrl}/quote`, {
+        params: { symbol: finnhubSymbol, token: this.finnhubApiKey },
         timeout: 10000,
-      },
-    );
+      }),
+      axios.get(`${this.finnhubBaseUrl}/stock/profile2`, {
+        params: { symbol: finnhubSymbol, token: this.finnhubApiKey },
+        timeout: 10000,
+      }).catch(() => ({ data: {} })), // Profile is optional
+    ]);
     
-    if (response.data && response.data.length > 0) {
-      const data = response.data[0];
-      const prevClose = response.data[1]?.close || data.open;
-      
-      return {
-        symbol: symbol,
-        name: tiingoSymbol,
-        price: data.close,
-        change: data.close - prevClose,
-        changePct: prevClose ? ((data.close - prevClose) / prevClose) * 100 : 0,
-        open: data.open,
-        high: data.high,
-        low: data.low,
-        volume: data.volume,
-      };
+    const quote = quoteResponse.data;
+    const profile = profileResponse.data;
+    
+    if (!quote || quote.c === 0) {
+      throw new Error(`No quote data from Finnhub for ${symbol}`);
     }
     
-    throw new Error(`No data from Tiingo for ${symbol}`);
+    return {
+      symbol: symbol,
+      name: profile.name || finnhubSymbol,
+      price: quote.c, // Current price
+      change: quote.d || 0, // Change
+      changePct: quote.dp || 0, // Change percent
+      open: quote.o || quote.c,
+      high: quote.h || quote.c,
+      low: quote.l || quote.c,
+      volume: 0, // Quote endpoint doesn't include volume
+      marketCap: profile.marketCapitalization ? profile.marketCapitalization * 1000000 : undefined,
+    };
   }
 
   /**
-   * Fetch crypto quote from Tiingo
+   * Fetch crypto quote from Finnhub
    */
-  private async fetchTiingoCryptoQuote(symbol: string): Promise<QuoteData> {
-    // Convert symbol format (BTC-USD -> btcusd)
-    const cryptoTicker = symbol.replace('-', '').toLowerCase();
+  private async fetchFinnhubCryptoQuote(symbol: string): Promise<QuoteData> {
+    // Convert symbol format (BTC-USD -> BINANCE:BTCUSDT)
+    const cryptoSymbol = this.getFinnhubCryptoSymbol(symbol);
     
-    const response = await axios.get(
-      `${this.tiingoBaseUrl}/tiingo/crypto/prices`,
-      {
-        params: {
-          tickers: cryptoTicker,
-        },
-        headers: this.getTiingoHeaders(),
-        timeout: 10000,
-      },
-    );
+    const response = await axios.get(`${this.finnhubBaseUrl}/quote`, {
+      params: { symbol: cryptoSymbol, token: this.finnhubApiKey },
+      timeout: 10000,
+    });
     
-    if (response.data && response.data.length > 0) {
-      const data = response.data[0].priceData?.[0];
-      if (data) {
-        const price = data.close || data.last;
-        const open = data.open || price;
-        
-        return {
-          symbol: symbol,
-          name: symbol,
-          price: price,
-          change: price - open,
-          changePct: open ? ((price - open) / open) * 100 : 0,
-          open: open,
-          high: data.high || price,
-          low: data.low || price,
-          volume: data.volume || 0,
-        };
-      }
+    const quote = response.data;
+    
+    if (!quote || quote.c === 0) {
+      throw new Error(`No crypto data from Finnhub for ${symbol}`);
     }
     
-    throw new Error(`No crypto data from Tiingo for ${symbol}`);
+    return {
+      symbol: symbol,
+      name: symbol,
+      price: quote.c,
+      change: quote.d || 0,
+      changePct: quote.dp || 0,
+      open: quote.o || quote.c,
+      high: quote.h || quote.c,
+      low: quote.l || quote.c,
+      volume: 0,
+    };
   }
 
   /**
-   * Fetch historical data from Tiingo
+   * Fetch historical candle data from Finnhub
    */
-  private async fetchTiingoHistory(symbol: string, range: string): Promise<HistoricalData[]> {
-    const tiingoSymbol = this.getTiingoSymbol(symbol);
+  private async fetchFinnhubHistory(symbol: string, range: string): Promise<HistoricalData[]> {
+    const finnhubSymbol = this.getFinnhubSymbol(symbol);
     
     // Check if it's crypto
     if (this.detectAssetType(symbol) === 'crypto') {
-      return this.fetchTiingoCryptoHistory(symbol, range);
+      return this.fetchFinnhubCryptoHistory(symbol, range);
     }
     
-    // Calculate date range
-    const endDate = new Date();
-    const startDate = new Date();
+    // Calculate timestamps
+    const now = Math.floor(Date.now() / 1000);
+    let from: number;
+    let resolution: string;
     
     switch (range) {
       case '1d':
-        startDate.setDate(startDate.getDate() - 1);
+        from = now - 86400; // 1 day
+        resolution = '5'; // 5 minutes
         break;
       case '1w':
-        startDate.setDate(startDate.getDate() - 7);
+        from = now - 604800; // 7 days
+        resolution = '15'; // 15 minutes
         break;
       case '1m':
-        startDate.setMonth(startDate.getMonth() - 1);
+        from = now - 2592000; // 30 days
+        resolution = 'D'; // Daily
         break;
       case '3m':
-        startDate.setMonth(startDate.getMonth() - 3);
+        from = now - 7776000; // 90 days
+        resolution = 'D';
         break;
       case '1y':
-        startDate.setFullYear(startDate.getFullYear() - 1);
+        from = now - 31536000; // 365 days
+        resolution = 'D';
         break;
       case '5y':
-        startDate.setFullYear(startDate.getFullYear() - 5);
+        from = now - 157680000; // 5 years
+        resolution = 'W'; // Weekly
         break;
       default:
-        startDate.setMonth(startDate.getMonth() - 1);
+        from = now - 2592000;
+        resolution = 'D';
     }
     
-    const response = await axios.get(
-      `${this.tiingoBaseUrl}/tiingo/daily/${tiingoSymbol}/prices`,
-      {
-        params: {
-          startDate: startDate.toISOString().split('T')[0],
-          endDate: endDate.toISOString().split('T')[0],
-        },
-        headers: this.getTiingoHeaders(),
-        timeout: 10000,
+    const response = await axios.get(`${this.finnhubBaseUrl}/stock/candle`, {
+      params: {
+        symbol: finnhubSymbol,
+        resolution,
+        from,
+        to: now,
+        token: this.finnhubApiKey,
       },
-    );
+      timeout: 10000,
+    });
     
-    if (response.data && Array.isArray(response.data)) {
-      return response.data.map((d: any) => ({
-        timestamp: d.date,
-        open: d.open,
-        high: d.high,
-        low: d.low,
-        close: d.close,
-        volume: d.volume,
-      }));
+    const data = response.data;
+    
+    if (data.s !== 'ok' || !data.t) {
+      return [];
     }
     
-    return [];
+    return data.t.map((timestamp: number, i: number) => ({
+      timestamp: new Date(timestamp * 1000).toISOString(),
+      open: data.o[i],
+      high: data.h[i],
+      low: data.l[i],
+      close: data.c[i],
+      volume: data.v[i],
+    }));
   }
 
   /**
-   * Fetch crypto historical data from Tiingo
+   * Fetch crypto historical data from Finnhub
    */
-  private async fetchTiingoCryptoHistory(symbol: string, range: string): Promise<HistoricalData[]> {
-    const cryptoTicker = symbol.replace('-', '').toLowerCase();
+  private async fetchFinnhubCryptoHistory(symbol: string, range: string): Promise<HistoricalData[]> {
+    const cryptoSymbol = this.getFinnhubCryptoSymbol(symbol);
     
-    // Calculate date range
-    const endDate = new Date();
-    const startDate = new Date();
-    let resampleFreq = '1day';
+    const now = Math.floor(Date.now() / 1000);
+    let from: number;
+    let resolution: string;
     
     switch (range) {
       case '1d':
-        startDate.setDate(startDate.getDate() - 1);
-        resampleFreq = '1hour';
+        from = now - 86400;
+        resolution = '5';
         break;
       case '1w':
-        startDate.setDate(startDate.getDate() - 7);
-        resampleFreq = '4hour';
+        from = now - 604800;
+        resolution = '60';
         break;
       case '1m':
-        startDate.setMonth(startDate.getMonth() - 1);
-        resampleFreq = '1day';
+        from = now - 2592000;
+        resolution = 'D';
         break;
       case '3m':
-        startDate.setMonth(startDate.getMonth() - 3);
-        resampleFreq = '1day';
+        from = now - 7776000;
+        resolution = 'D';
         break;
       case '1y':
-        startDate.setFullYear(startDate.getFullYear() - 1);
-        resampleFreq = '1day';
+        from = now - 31536000;
+        resolution = 'D';
         break;
       default:
-        startDate.setMonth(startDate.getMonth() - 1);
+        from = now - 2592000;
+        resolution = 'D';
     }
     
-    const response = await axios.get(
-      `${this.tiingoBaseUrl}/tiingo/crypto/prices`,
-      {
-        params: {
-          tickers: cryptoTicker,
-          startDate: startDate.toISOString(),
-          endDate: endDate.toISOString(),
-          resampleFreq: resampleFreq,
-        },
-        headers: this.getTiingoHeaders(),
-        timeout: 10000,
+    const response = await axios.get(`${this.finnhubBaseUrl}/crypto/candle`, {
+      params: {
+        symbol: cryptoSymbol,
+        resolution,
+        from,
+        to: now,
+        token: this.finnhubApiKey,
       },
-    );
+      timeout: 10000,
+    });
     
-    if (response.data && response.data.length > 0 && response.data[0].priceData) {
-      return response.data[0].priceData.map((d: any) => ({
-        timestamp: d.date,
-        open: d.open,
-        high: d.high,
-        low: d.low,
-        close: d.close,
-        volume: d.volume,
-      }));
+    const data = response.data;
+    
+    if (data.s !== 'ok' || !data.t) {
+      return [];
+    }
+    
+    return data.t.map((timestamp: number, i: number) => ({
+      timestamp: new Date(timestamp * 1000).toISOString(),
+      open: data.o[i],
+      high: data.h[i],
+      low: data.l[i],
+      close: data.c[i],
+      volume: data.v[i],
+    }));
+  }
+
+  /**
+   * Search symbols using Finnhub
+   */
+  async searchWithFinnhub(query: string): Promise<Array<{ symbol: string; name: string; type: string }>> {
+    if (!this.finnhubApiKey) return [];
+    
+    try {
+      const response = await axios.get(`${this.finnhubBaseUrl}/search`, {
+        params: { q: query, token: this.finnhubApiKey },
+        timeout: 5000,
+      });
+      
+      if (response.data?.result) {
+        return response.data.result.slice(0, 10).map((item: any) => ({
+          symbol: item.symbol,
+          name: item.description,
+          type: item.type || 'stock',
+        }));
+      }
+    } catch (error) {
+      this.logger.warn('Finnhub search failed', error);
     }
     
     return [];
   }
 
   /**
-   * Convert symbol to Tiingo format
+   * Convert symbol to Finnhub format
    */
-  private getTiingoSymbol(symbol: string): string {
-    // Remove exchange suffixes (.DE, .L, etc.) as Tiingo uses plain tickers
+  private getFinnhubSymbol(symbol: string): string {
+    // Remove exchange suffixes (.DE, .L, etc.)
     const cleanSymbol = symbol.split('.')[0].toUpperCase();
     
-    // If it's a German ticker, try to convert back to US ticker
+    // If it's a German ticker, convert back to US ticker
     const usSymbol = Object.entries(US_TO_GERMAN_TICKERS).find(
       ([, german]) => german === cleanSymbol
     );
     
     return usSymbol ? usSymbol[0] : cleanSymbol;
+  }
+
+  /**
+   * Convert crypto symbol to Finnhub format
+   */
+  private getFinnhubCryptoSymbol(symbol: string): string {
+    // Convert BTC-USD to BINANCE:BTCUSDT format
+    const base = symbol.replace('-USD', '').toUpperCase();
+    return `BINANCE:${base}USDT`;
   }
 
   private async updateMarketDataCache(data: QuoteData) {
