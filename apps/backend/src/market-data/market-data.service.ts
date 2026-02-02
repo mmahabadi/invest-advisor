@@ -15,6 +15,8 @@ interface QuoteData {
   volume: number;
   marketCap?: number;
   pe?: number;
+  lastUpdated?: string;
+  dataSource?: string;
 }
 
 export interface HistoricalData {
@@ -108,31 +110,48 @@ export class MarketDataService {
   async getQuote(symbol: string): Promise<QuoteData> {
     const cacheKey = `quote:${symbol}`;
     const cached = this.getFromCache(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+      this.logger.debug(`Cache hit for ${symbol}`);
+      return cached;
+    }
 
     try {
       let data: QuoteData;
+      let dataSource = 'unknown';
       
       // Try Finnhub first if API key is configured
       if (this.finnhubApiKey) {
         try {
           data = await this.fetchFinnhubQuote(symbol);
+          dataSource = 'finnhub';
+          this.logger.log(`Finnhub quote for ${symbol}: $${data.price} (${dataSource})`);
         } catch (finnhubError) {
-          this.logger.warn(`Finnhub failed for ${symbol}, trying Yahoo Finance`, finnhubError);
+          this.logger.warn(`Finnhub failed for ${symbol}: ${finnhubError.message}, trying Yahoo Finance`);
           data = await this.fetchYahooQuote(symbol);
+          dataSource = 'yahoo';
+          this.logger.log(`Yahoo quote for ${symbol}: $${data.price} (${dataSource})`);
         }
       } else {
         // Fallback to Yahoo Finance
         data = await this.fetchYahooQuote(symbol);
+        dataSource = 'yahoo';
+        this.logger.log(`Yahoo quote for ${symbol}: $${data.price} (no Finnhub key)`);
       }
       
-      this.setCache(cacheKey, data, 60 * 1000); // Cache for 1 minute
+      // Add metadata
+      data.lastUpdated = new Date().toISOString();
+      data.dataSource = dataSource;
+      
+      // Cache for 30 seconds (shorter for more frequent updates)
+      this.setCache(cacheKey, data, 30 * 1000);
       
       // Update database cache
       await this.updateMarketDataCache(data);
       
       return data;
     } catch (error) {
+      this.logger.error(`All quote sources failed for ${symbol}, using database cache`);
+      
       // Fallback to database cache
       const dbCache = await this.db.query(
         `SELECT * FROM market_data_cache WHERE symbol = $1`,
@@ -141,6 +160,7 @@ export class MarketDataService {
 
       if (dbCache.rows.length > 0) {
         const row = dbCache.rows[0];
+        this.logger.warn(`Using stale database cache for ${symbol}, last updated: ${row.last_updated}`);
         return {
           symbol: row.symbol,
           name: row.asset_name || row.symbol,
@@ -153,6 +173,8 @@ export class MarketDataService {
           volume: Number(row.volume) || 0,
           marketCap: row.market_cap ? Number(row.market_cap) : undefined,
           pe: row.pe_ratio ? Number(row.pe_ratio) : undefined,
+          lastUpdated: row.last_updated?.toISOString(),
+          dataSource: 'database_cache',
         };
       }
 
@@ -553,6 +575,12 @@ export class MarketDataService {
       throw new Error(`No quote data from Finnhub for ${symbol}`);
     }
     
+    // Log the raw Finnhub response for debugging
+    this.logger.debug(`Finnhub raw quote for ${finnhubSymbol}: c=${quote.c}, pc=${quote.pc}, t=${quote.t}`);
+    
+    // Finnhub returns timestamp in Unix seconds
+    const quoteTimestamp = quote.t ? new Date(quote.t * 1000).toISOString() : undefined;
+    
     return {
       symbol: symbol,
       name: profile.name || finnhubSymbol,
@@ -564,6 +592,7 @@ export class MarketDataService {
       low: quote.l || quote.c,
       volume: 0, // Quote endpoint doesn't include volume
       marketCap: profile.marketCapitalization ? profile.marketCapitalization * 1000000 : undefined,
+      lastUpdated: quoteTimestamp,
     };
   }
 
