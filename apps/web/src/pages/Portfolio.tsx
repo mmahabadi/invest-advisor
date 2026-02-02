@@ -6,7 +6,7 @@ import { PriceChange } from '../components/ui/PriceChange';
 import { SymbolSearch, SearchResult } from '../components/ui/SymbolSearch';
 import { SparklineChart } from '../components/ui/SparklineChart';
 import { PriceChart } from '../components/ui/PriceChart';
-import { formatPriceEUR, formatEUR, convertToEUR } from '../utils/currency';
+import { formatPriceEUR, formatEUR } from '../utils/currency';
 import { portfolioApi } from '../services/api';
 import type { Portfolio, PortfolioItem } from '../types';
 
