@@ -90,11 +90,25 @@ const US_TO_GERMAN_TICKERS: Record<string, string> = {
 export class MarketDataService {
   private readonly logger = new Logger(MarketDataService.name);
   private readonly cache = new Map<string, { data: any; expiry: number }>();
+  private readonly tiingoApiKey: string;
+  private readonly tiingoBaseUrl = 'https://api.tiingo.com';
 
   constructor(
     private configService: ConfigService,
     @Inject('DatabaseService') private db: DatabaseService,
-  ) {}
+  ) {
+    this.tiingoApiKey = this.configService.get<string>('TIINGO_API_KEY') || '';
+    if (!this.tiingoApiKey) {
+      this.logger.warn('TIINGO_API_KEY not configured - falling back to Yahoo Finance');
+    }
+  }
+
+  private getTiingoHeaders() {
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Token ${this.tiingoApiKey}`,
+    };
+  }
 
   async getQuote(symbol: string): Promise<QuoteData> {
     const cacheKey = `quote:${symbol}`;
@@ -102,8 +116,21 @@ export class MarketDataService {
     if (cached) return cached;
 
     try {
-      // Try to fetch from Yahoo Finance (via yfinance proxy or API)
-      const data = await this.fetchYahooQuote(symbol);
+      let data: QuoteData;
+      
+      // Try Tiingo first if API key is configured
+      if (this.tiingoApiKey) {
+        try {
+          data = await this.fetchTiingoQuote(symbol);
+        } catch (tiingoError) {
+          this.logger.warn(`Tiingo failed for ${symbol}, trying Yahoo Finance`, tiingoError);
+          data = await this.fetchYahooQuote(symbol);
+        }
+      } else {
+        // Fallback to Yahoo Finance
+        data = await this.fetchYahooQuote(symbol);
+      }
+      
       this.setCache(cacheKey, data, 60 * 1000); // Cache for 1 minute
       
       // Update database cache
@@ -147,7 +174,20 @@ export class MarketDataService {
     if (cached) return cached;
 
     try {
-      const data = await this.fetchYahooHistory(symbol, range);
+      let data: HistoricalData[];
+      
+      // Try Tiingo first if API key is configured
+      if (this.tiingoApiKey) {
+        try {
+          data = await this.fetchTiingoHistory(symbol, range);
+        } catch (tiingoError) {
+          this.logger.warn(`Tiingo history failed for ${symbol}, trying Yahoo Finance`, tiingoError);
+          data = await this.fetchYahooHistory(symbol, range);
+        }
+      } else {
+        data = await this.fetchYahooHistory(symbol, range);
+      }
+      
       this.setCache(cacheKey, data, 5 * 60 * 1000); // Cache for 5 minutes
       return data;
     } catch (error) {
@@ -468,6 +508,261 @@ export class MarketDataService {
       close: quote.close?.[i] || 0,
       volume: quote.volume?.[i] || 0,
     }));
+  }
+
+  // ==================== TIINGO API METHODS ====================
+
+  /**
+   * Fetch real-time quote from Tiingo IEX or end-of-day API
+   */
+  private async fetchTiingoQuote(symbol: string): Promise<QuoteData> {
+    // Clean symbol for Tiingo (remove exchange suffix for US stocks)
+    const tiingoSymbol = this.getTiingoSymbol(symbol);
+    
+    // Check if it's crypto
+    if (this.detectAssetType(symbol) === 'crypto') {
+      return this.fetchTiingoCryptoQuote(symbol);
+    }
+    
+    // Try IEX real-time first (US stocks only)
+    try {
+      const response = await axios.get(
+        `${this.tiingoBaseUrl}/iex/${tiingoSymbol}`,
+        {
+          headers: this.getTiingoHeaders(),
+          timeout: 10000,
+        },
+      );
+      
+      if (response.data && response.data.length > 0) {
+        const data = response.data[0];
+        return {
+          symbol: symbol,
+          name: tiingoSymbol,
+          price: data.last || data.tngoLast || 0,
+          change: (data.last || 0) - (data.prevClose || 0),
+          changePct: data.prevClose ? (((data.last || 0) - data.prevClose) / data.prevClose) * 100 : 0,
+          open: data.open || 0,
+          high: data.high || 0,
+          low: data.low || 0,
+          volume: data.volume || 0,
+        };
+      }
+    } catch (iexError) {
+      this.logger.debug(`IEX not available for ${symbol}, trying end-of-day`);
+    }
+    
+    // Fallback to end-of-day data
+    const response = await axios.get(
+      `${this.tiingoBaseUrl}/tiingo/daily/${tiingoSymbol}/prices`,
+      {
+        headers: this.getTiingoHeaders(),
+        timeout: 10000,
+      },
+    );
+    
+    if (response.data && response.data.length > 0) {
+      const data = response.data[0];
+      const prevClose = response.data[1]?.close || data.open;
+      
+      return {
+        symbol: symbol,
+        name: tiingoSymbol,
+        price: data.close,
+        change: data.close - prevClose,
+        changePct: prevClose ? ((data.close - prevClose) / prevClose) * 100 : 0,
+        open: data.open,
+        high: data.high,
+        low: data.low,
+        volume: data.volume,
+      };
+    }
+    
+    throw new Error(`No data from Tiingo for ${symbol}`);
+  }
+
+  /**
+   * Fetch crypto quote from Tiingo
+   */
+  private async fetchTiingoCryptoQuote(symbol: string): Promise<QuoteData> {
+    // Convert symbol format (BTC-USD -> btcusd)
+    const cryptoTicker = symbol.replace('-', '').toLowerCase();
+    
+    const response = await axios.get(
+      `${this.tiingoBaseUrl}/tiingo/crypto/prices`,
+      {
+        params: {
+          tickers: cryptoTicker,
+        },
+        headers: this.getTiingoHeaders(),
+        timeout: 10000,
+      },
+    );
+    
+    if (response.data && response.data.length > 0) {
+      const data = response.data[0].priceData?.[0];
+      if (data) {
+        const price = data.close || data.last;
+        const open = data.open || price;
+        
+        return {
+          symbol: symbol,
+          name: symbol,
+          price: price,
+          change: price - open,
+          changePct: open ? ((price - open) / open) * 100 : 0,
+          open: open,
+          high: data.high || price,
+          low: data.low || price,
+          volume: data.volume || 0,
+        };
+      }
+    }
+    
+    throw new Error(`No crypto data from Tiingo for ${symbol}`);
+  }
+
+  /**
+   * Fetch historical data from Tiingo
+   */
+  private async fetchTiingoHistory(symbol: string, range: string): Promise<HistoricalData[]> {
+    const tiingoSymbol = this.getTiingoSymbol(symbol);
+    
+    // Check if it's crypto
+    if (this.detectAssetType(symbol) === 'crypto') {
+      return this.fetchTiingoCryptoHistory(symbol, range);
+    }
+    
+    // Calculate date range
+    const endDate = new Date();
+    const startDate = new Date();
+    
+    switch (range) {
+      case '1d':
+        startDate.setDate(startDate.getDate() - 1);
+        break;
+      case '1w':
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case '1m':
+        startDate.setMonth(startDate.getMonth() - 1);
+        break;
+      case '3m':
+        startDate.setMonth(startDate.getMonth() - 3);
+        break;
+      case '1y':
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        break;
+      case '5y':
+        startDate.setFullYear(startDate.getFullYear() - 5);
+        break;
+      default:
+        startDate.setMonth(startDate.getMonth() - 1);
+    }
+    
+    const response = await axios.get(
+      `${this.tiingoBaseUrl}/tiingo/daily/${tiingoSymbol}/prices`,
+      {
+        params: {
+          startDate: startDate.toISOString().split('T')[0],
+          endDate: endDate.toISOString().split('T')[0],
+        },
+        headers: this.getTiingoHeaders(),
+        timeout: 10000,
+      },
+    );
+    
+    if (response.data && Array.isArray(response.data)) {
+      return response.data.map((d: any) => ({
+        timestamp: d.date,
+        open: d.open,
+        high: d.high,
+        low: d.low,
+        close: d.close,
+        volume: d.volume,
+      }));
+    }
+    
+    return [];
+  }
+
+  /**
+   * Fetch crypto historical data from Tiingo
+   */
+  private async fetchTiingoCryptoHistory(symbol: string, range: string): Promise<HistoricalData[]> {
+    const cryptoTicker = symbol.replace('-', '').toLowerCase();
+    
+    // Calculate date range
+    const endDate = new Date();
+    const startDate = new Date();
+    let resampleFreq = '1day';
+    
+    switch (range) {
+      case '1d':
+        startDate.setDate(startDate.getDate() - 1);
+        resampleFreq = '1hour';
+        break;
+      case '1w':
+        startDate.setDate(startDate.getDate() - 7);
+        resampleFreq = '4hour';
+        break;
+      case '1m':
+        startDate.setMonth(startDate.getMonth() - 1);
+        resampleFreq = '1day';
+        break;
+      case '3m':
+        startDate.setMonth(startDate.getMonth() - 3);
+        resampleFreq = '1day';
+        break;
+      case '1y':
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        resampleFreq = '1day';
+        break;
+      default:
+        startDate.setMonth(startDate.getMonth() - 1);
+    }
+    
+    const response = await axios.get(
+      `${this.tiingoBaseUrl}/tiingo/crypto/prices`,
+      {
+        params: {
+          tickers: cryptoTicker,
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          resampleFreq: resampleFreq,
+        },
+        headers: this.getTiingoHeaders(),
+        timeout: 10000,
+      },
+    );
+    
+    if (response.data && response.data.length > 0 && response.data[0].priceData) {
+      return response.data[0].priceData.map((d: any) => ({
+        timestamp: d.date,
+        open: d.open,
+        high: d.high,
+        low: d.low,
+        close: d.close,
+        volume: d.volume,
+      }));
+    }
+    
+    return [];
+  }
+
+  /**
+   * Convert symbol to Tiingo format
+   */
+  private getTiingoSymbol(symbol: string): string {
+    // Remove exchange suffixes (.DE, .L, etc.) as Tiingo uses plain tickers
+    const cleanSymbol = symbol.split('.')[0].toUpperCase();
+    
+    // If it's a German ticker, try to convert back to US ticker
+    const usSymbol = Object.entries(US_TO_GERMAN_TICKERS).find(
+      ([, german]) => german === cleanSymbol
+    );
+    
+    return usSymbol ? usSymbol[0] : cleanSymbol;
   }
 
   private async updateMarketDataCache(data: QuoteData) {

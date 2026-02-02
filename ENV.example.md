@@ -31,6 +31,9 @@ EMAIL_FROM_NAME=InvestAdvisor
 # ML Engine
 ML_ENGINE_URL=http://localhost:8000
 
+# Tiingo API (https://www.tiingo.com/ - free tier available)
+TIINGO_API_KEY=
+
 # Frontend URL (for CORS and email links)
 FRONTEND_URL=http://localhost:5173
 ```
@@ -88,6 +91,9 @@ EMAIL_FROM_NAME=InvestAdvisor
 # Google OAuth
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
+
+# Tiingo API (https://www.tiingo.com/ - free tier available)
+TIINGO_API_KEY=your-tiingo-api-key
 ```
 
 ### ML Engine Service Variables
