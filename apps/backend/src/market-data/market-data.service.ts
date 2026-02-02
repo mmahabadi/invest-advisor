@@ -17,6 +17,7 @@ interface QuoteData {
   pe?: number;
   lastUpdated?: string;
   dataSource?: string;
+  currency?: string;
 }
 
 export interface HistoricalData {
@@ -418,15 +419,21 @@ export class MarketDataService {
 
   /**
    * Fetch real-time quote from Finnhub
+   * Note: Finnhub free tier only supports US stocks, so European symbols
+   * are converted to their US equivalents and prices are in USD.
+   * The frontend handles currency conversion based on the original symbol.
    */
   private async fetchFinnhubQuote(symbol: string): Promise<QuoteData> {
-    // Clean symbol for Finnhub
+    // Clean symbol for Finnhub (converts European to US if needed)
     const finnhubSymbol = this.getFinnhubSymbol(symbol);
+    const isEuropeanSymbol = symbol.toUpperCase().includes('.');
     
     // Check if it's crypto
     if (this.detectAssetType(symbol) === 'crypto') {
       return this.fetchFinnhubCryptoQuote(symbol);
     }
+    
+    this.logger.log(`Fetching Finnhub quote: ${finnhubSymbol} (original: ${symbol}, isEuropean: ${isEuropeanSymbol})`);
     
     // Fetch quote data
     const [quoteResponse, profileResponse] = await Promise.all([
@@ -443,28 +450,41 @@ export class MarketDataService {
     const quote = quoteResponse.data;
     const profile = profileResponse.data;
     
-    if (!quote || quote.c === 0) {
-      throw new Error(`No quote data from Finnhub for ${symbol}`);
-    }
+    // Log raw response for debugging
+    this.logger.log(`Finnhub response for ${finnhubSymbol}: c=${quote.c}, d=${quote.d}, dp=${quote.dp}, t=${quote.t}`);
     
-    // Log the raw Finnhub response for debugging
-    this.logger.debug(`Finnhub raw quote for ${finnhubSymbol}: c=${quote.c}, pc=${quote.pc}, t=${quote.t}`);
+    if (!quote || quote.c === 0) {
+      throw new Error(`No quote data from Finnhub for ${symbol} (tried: ${finnhubSymbol})`);
+    }
     
     // Finnhub returns timestamp in Unix seconds
     const quoteTimestamp = quote.t ? new Date(quote.t * 1000).toISOString() : undefined;
     
+    // Finnhub always returns USD prices for US stocks
+    // The currency field indicates what the user expects (for frontend conversion)
+    let currency = 'USD';
+    const upperSymbol = symbol.toUpperCase();
+    if (upperSymbol.endsWith('.DE') || upperSymbol.endsWith('.F')) {
+      currency = 'EUR';
+    } else if (upperSymbol.endsWith('.L')) {
+      currency = 'GBP';
+    } else if (upperSymbol.endsWith('.SW')) {
+      currency = 'CHF';
+    }
+    
     return {
       symbol: symbol,
       name: profile.name || finnhubSymbol,
-      price: quote.c, // Current price
-      change: quote.d || 0, // Change
-      changePct: quote.dp || 0, // Change percent
+      price: quote.c, // Price in USD from Finnhub
+      change: quote.d || 0,
+      changePct: quote.dp || 0,
       open: quote.o || quote.c,
       high: quote.h || quote.c,
       low: quote.l || quote.c,
-      volume: 0, // Quote endpoint doesn't include volume
+      volume: 0,
       marketCap: profile.marketCapitalization ? profile.marketCapitalization * 1000000 : undefined,
       lastUpdated: quoteTimestamp,
+      currency: currency, // What the user expects (frontend will convert)
     };
   }
 
@@ -666,15 +686,30 @@ export class MarketDataService {
    * Convert symbol to Finnhub format
    */
   private getFinnhubSymbol(symbol: string): string {
-    // Remove exchange suffixes (.DE, .L, etc.)
-    const cleanSymbol = symbol.split('.')[0].toUpperCase();
+    const upperSymbol = symbol.toUpperCase();
     
-    // If it's a German ticker, convert back to US ticker
-    const usSymbol = Object.entries(US_TO_GERMAN_TICKERS).find(
-      ([, german]) => german === cleanSymbol
-    );
+    // Finnhub primarily supports US stocks
+    // For European symbols like TL0.DE, we need to convert to base US ticker
+    // because Finnhub free tier doesn't support European exchanges well
+    if (upperSymbol.includes('.')) {
+      const baseTicker = upperSymbol.split('.')[0];
+      
+      // If it's a German ticker, try to find the US equivalent
+      const usEntry = Object.entries(US_TO_GERMAN_TICKERS).find(
+        ([, german]) => german === baseTicker
+      );
+      
+      if (usEntry) {
+        this.logger.log(`Converting German ticker ${upperSymbol} → US ticker ${usEntry[0]}`);
+        return usEntry[0];
+      }
+      
+      // Otherwise, try the base ticker (might be same on US market)
+      return baseTicker;
+    }
     
-    return usSymbol ? usSymbol[0] : cleanSymbol;
+    // No suffix - assume US stock
+    return upperSymbol;
   }
 
   /**

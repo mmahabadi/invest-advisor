@@ -12,7 +12,7 @@ function toNumber(value: unknown): number {
 }
 
 /**
- * Check if a symbol is from a European exchange (prices already in EUR)
+ * Check if a symbol is from a European exchange
  */
 export function isEuropeanSymbol(symbol: string | null | undefined): boolean {
   if (!symbol) return false;
@@ -49,30 +49,21 @@ export function usdToEur(usdAmount: number | string | null | undefined): number 
 }
 
 /**
- * Convert price to EUR based on the symbol's native currency
+ * Convert price to EUR
+ * 
+ * IMPORTANT: Finnhub free tier only returns USD prices for US stocks.
+ * Even if the symbol is TL0.DE (German), we're fetching TSLA (US) prices in USD.
+ * So ALL prices need to be converted from USD to EUR.
  */
 export function convertToEUR(
   value: number | string | null | undefined, 
-  symbol?: string | null
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _symbol?: string | null
 ): number {
   const numValue = toNumber(value);
   
-  // If European symbol, price is already in EUR
-  if (isEuropeanSymbol(symbol)) {
-    return numValue;
-  }
-  
-  // If GBP symbol, convert GBP to EUR (approximate rate)
-  if (isGBPSymbol(symbol)) {
-    return numValue * 1.17; // 1 GBP ≈ 1.17 EUR
-  }
-  
-  // If CHF symbol, convert CHF to EUR (approximate rate)
-  if (isCHFSymbol(symbol)) {
-    return numValue * 1.06; // 1 CHF ≈ 1.06 EUR
-  }
-  
-  // Default: assume USD and convert to EUR
+  // Finnhub always returns USD prices (free tier only supports US stocks)
+  // So we always convert from USD to EUR
   return numValue * USD_TO_EUR_RATE;
 }
 
